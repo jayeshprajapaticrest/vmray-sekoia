@@ -1,0 +1,40 @@
+{
+  "configuration": {
+    "properties": {
+      "base_url": {
+        "description": "VMRay Platform URL, e.g. https://eu.cloud.vmray.com or an on-prem appliance URL",
+        "format": "uri",
+        "title": "Base Url",
+        "type": "string"
+      },
+      "api_key": {
+        "description": "VMRay API key",
+        "title": "Api Key",
+        "type": "string"
+      },
+      "verify_ssl": {
+        "default": true,
+        "description": "Verify the TLS certificate of the VMRay Platform. Disable only for an on-prem appliance with a self-signed certificate.",
+        "title": "Verify Ssl",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "base_url",
+      "api_key"
+    ],
+    "title": "VMRayConfiguration",
+    "type": "object",
+    "secrets": [
+      "api_key"
+    ]
+  },
+  "description": "VMRay Platform \u2014 agentless hypervisor-based sandbox for malware detonation, VTI scoring and IOC extraction",
+  "name": "VMRay",
+  "slug": "vmray",
+  "categories": [
+    "Threat Intelligence"
+  ],
+  "uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e",
+  "version": "1.0.0"
+}

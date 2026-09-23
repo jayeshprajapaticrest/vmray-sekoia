@@ -1,0 +1,73 @@
+{
+  "name": "IOCs to indicator list",
+  "description": "Convert VMRay IOCs into the flat, typed indicator list Sekoia's add_ioc_to_ioc_collection action expects. Lossy by design \u2014 mutexes, registry keys and processes have no Sekoia indicator type.",
+  "uuid": "31b0878c-1a29-5b5a-bf5a-dc1408808c6e",
+  "docker_parameters": "IocsToIndicators",
+  "arguments": {
+    "properties": {
+      "iocs_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Path (on data_path) to an AnalysisDetails JSON file.",
+        "title": "Iocs Path"
+      },
+      "iocs": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "AnalysisDetails object, given inline instead.",
+        "title": "Iocs"
+      }
+    },
+    "title": "IocsToIndicatorsArguments",
+    "type": "object"
+  },
+  "results": {
+    "$defs": {
+      "Indicator": {
+        "description": "One entry matching add_ioc_to_ioc_collection's expected shape.",
+        "properties": {
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "type"
+        ],
+        "title": "Indicator",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "indicators": {
+        "items": {
+          "$ref": "#/$defs/Indicator"
+        },
+        "title": "Indicators",
+        "type": "array"
+      }
+    },
+    "title": "IocsToIndicatorsResults",
+    "type": "object"
+  }
+}

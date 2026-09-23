@@ -1,0 +1,156 @@
+{
+  "name": "Submit and wait for result",
+  "description": "Submit a URL or file to VMRay and block until the analysis finishes, returning verdict only.",
+  "uuid": "f3065427-f880-5fbe-9154-219be937270e",
+  "docker_parameters": "SubmitAndWait",
+  "arguments": {
+    "properties": {
+      "sample_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "URL to detonate. Mutually exclusive with file_name.",
+        "title": "Sample Url"
+      },
+      "file_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Name of a file already staged under the action's data_path to submit.",
+        "title": "File Name"
+      },
+      "reanalyze": {
+        "default": false,
+        "description": "Force a fresh detonation even if a cached result exists.",
+        "title": "Reanalyze",
+        "type": "boolean"
+      },
+      "analysis_caching": {
+        "default": true,
+        "description": "Allow VMRay to return a cached result instead of a fresh detonation.",
+        "title": "Analysis Caching",
+        "type": "boolean"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      },
+      "timeout": {
+        "default": 1800,
+        "description": "Maximum time (seconds) to wait for the analysis to finish.",
+        "title": "Timeout",
+        "type": "number"
+      },
+      "pull_time": {
+        "default": 10,
+        "description": "Time (seconds) between polls of the submission status.",
+        "title": "Pull Time",
+        "type": "number"
+      },
+      "push_timeout": {
+        "default": 30,
+        "description": "Maximum time (seconds) to wait for the initial submit call.",
+        "title": "Push Timeout",
+        "type": "number"
+      }
+    },
+    "title": "SubmitAndWaitArguments",
+    "type": "object"
+  },
+  "results": {
+    "properties": {
+      "submission_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Submission Id"
+      },
+      "sample_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Id"
+      },
+      "sample_verdict": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Verdict"
+      },
+      "sample_vti_score": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Vti Score"
+      },
+      "sample_webif_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Webif Url"
+      },
+      "timed_out": {
+        "default": false,
+        "title": "Timed Out",
+        "type": "boolean"
+      },
+      "errors": {
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Errors",
+        "type": "array"
+      }
+    },
+    "title": "SubmitAndWaitResults",
+    "type": "object"
+  }
+}

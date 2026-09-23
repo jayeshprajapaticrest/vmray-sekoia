@@ -1,0 +1,690 @@
+{
+  "name": "Submit and enrich",
+  "description": "Submit a URL or file, wait for the result, and fetch VTIs/IOCs/MITRE ATT&CK in one node.",
+  "uuid": "6e668214-4db9-55cd-aa9d-13afa2bb86b4",
+  "docker_parameters": "SubmitAndEnrich",
+  "arguments": {
+    "properties": {
+      "sample_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "URL to detonate. Mutually exclusive with file_name.",
+        "title": "Sample Url"
+      },
+      "file_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Name of a file already staged under the action's data_path to submit.",
+        "title": "File Name"
+      },
+      "reanalyze": {
+        "default": false,
+        "description": "Force a fresh detonation even if a cached result exists.",
+        "title": "Reanalyze",
+        "type": "boolean"
+      },
+      "analysis_caching": {
+        "default": true,
+        "description": "Allow VMRay to return a cached result instead of a fresh detonation.",
+        "title": "Analysis Caching",
+        "type": "boolean"
+      },
+      "tags": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      },
+      "timeout": {
+        "default": 1800,
+        "description": "Maximum time (seconds) to wait for the analysis to finish.",
+        "title": "Timeout",
+        "type": "number"
+      },
+      "pull_time": {
+        "default": 10,
+        "description": "Time (seconds) between polls of the submission status.",
+        "title": "Pull Time",
+        "type": "number"
+      },
+      "push_timeout": {
+        "default": 30,
+        "description": "Maximum time (seconds) to wait for the initial submit call.",
+        "title": "Push Timeout",
+        "type": "number"
+      },
+      "include_vtis": {
+        "default": true,
+        "title": "Include Vtis",
+        "type": "boolean"
+      },
+      "include_iocs": {
+        "default": true,
+        "title": "Include Iocs",
+        "type": "boolean"
+      },
+      "include_mitre_attack": {
+        "default": true,
+        "title": "Include Mitre Attack",
+        "type": "boolean"
+      },
+      "include_recursive": {
+        "default": false,
+        "title": "Include Recursive",
+        "type": "boolean"
+      }
+    },
+    "title": "SubmitAndEnrichArguments",
+    "type": "object"
+  },
+  "results": {
+    "$defs": {
+      "AnalysisDetails": {
+        "properties": {
+          "sample_id": {
+            "title": "Sample Id",
+            "type": "integer"
+          },
+          "sample_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Verdict"
+          },
+          "sample_verdict_reason_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Verdict Reason Code"
+          },
+          "sample_verdict_reason_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Verdict Reason Description"
+          },
+          "sample_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Score"
+          },
+          "sample_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Severity"
+          },
+          "sample_vti_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Vti Score"
+          },
+          "sample_highest_vti_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Highest Vti Score"
+          },
+          "sample_threat_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample Threat Names",
+            "type": "array"
+          },
+          "sample_classifications": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample Classifications",
+            "type": "array"
+          },
+          "sample_sha256hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Sha256Hash"
+          },
+          "sample_sha1hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Sha1Hash"
+          },
+          "sample_md5hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Md5Hash"
+          },
+          "sample_ssdeephash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Ssdeephash"
+          },
+          "sample_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Filename"
+          },
+          "sample_filesize": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Filesize"
+          },
+          "sample_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Type"
+          },
+          "sample_webif_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Webif Url"
+          },
+          "sample_display_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Display Url"
+          },
+          "sample_child_sample_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Sample Child Sample Ids",
+            "type": "array"
+          },
+          "sample_child_relations": {
+            "items": {
+              "$ref": "#/$defs/SampleChildRelation"
+            },
+            "title": "Sample Child Relations",
+            "type": "array"
+          },
+          "sample_child_relations_truncated": {
+            "default": false,
+            "title": "Sample Child Relations Truncated",
+            "type": "boolean"
+          },
+          "threat_indicators": {
+            "items": {
+              "$ref": "#/$defs/ThreatIndicator"
+            },
+            "title": "Threat Indicators",
+            "type": "array"
+          },
+          "iocs": {
+            "$ref": "#/$defs/IOCSet"
+          },
+          "mitre_attack_techniques": {
+            "items": {
+              "$ref": "#/$defs/MitreAttackTechnique"
+            },
+            "title": "Mitre Attack Techniques",
+            "type": "array"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Id"
+          },
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Id"
+          },
+          "submission_consumed_quota": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Consumed Quota"
+          },
+          "submission_finished": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Finished"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "sample_id"
+        ],
+        "title": "AnalysisDetails",
+        "type": "object"
+      },
+      "IOCSet": {
+        "additionalProperties": true,
+        "description": "The `iocs` object from GET /sample/{id}/iocs. Keys per the spec's\ndocumented ioc_type filter values.",
+        "properties": {
+          "files": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "filenames": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Filenames",
+            "type": "array"
+          },
+          "mutexes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Mutexes",
+            "type": "array"
+          },
+          "registry": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Registry",
+            "type": "array"
+          },
+          "urls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Urls",
+            "type": "array"
+          },
+          "domains": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "ips": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Ips",
+            "type": "array"
+          },
+          "emails": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Emails",
+            "type": "array"
+          },
+          "email_addresses": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Email Addresses",
+            "type": "array"
+          },
+          "processes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Processes",
+            "type": "array"
+          }
+        },
+        "title": "IOCSet",
+        "type": "object"
+      },
+      "MitreAttackTechnique": {
+        "additionalProperties": true,
+        "description": "One entry from GET /sample/{id}/mitre_attack -> mitre_attack_techniques[].",
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "tactics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tactics"
+          }
+        },
+        "title": "MitreAttackTechnique",
+        "type": "object"
+      },
+      "SampleChildRelation": {
+        "additionalProperties": true,
+        "description": "One entry from GET /sample/{id} -> sample_child_relations[].",
+        "properties": {
+          "child_sample_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Child Sample Id"
+          },
+          "relation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Relation Type"
+          }
+        },
+        "title": "SampleChildRelation",
+        "type": "object"
+      },
+      "ThreatIndicator": {
+        "additionalProperties": true,
+        "description": "One entry from GET /sample/{id}/vtis -> threat_indicators[].",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Category"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operation"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Classification"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Id"
+          }
+        },
+        "title": "ThreatIndicator",
+        "type": "object"
+      }
+    },
+    "description": "Not just AnalysisDetails reused directly (the original sketch) \u2014 that\nbreaks on a failed submission, since AnalysisDetails.sample_id is\nrequired and a failed submission never gets one. Same honesty fix as\nSubmitAndWaitResults.submission_id needed. `analysis` is populated only\nonce the submission actually finished.",
+    "properties": {
+      "submission_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Submission Id"
+      },
+      "sample_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Id"
+      },
+      "timed_out": {
+        "default": false,
+        "title": "Timed Out",
+        "type": "boolean"
+      },
+      "submission_errors": {
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Submission Errors",
+        "type": "array"
+      },
+      "analysis": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/AnalysisDetails"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "title": "SubmitAndEnrichResults",
+    "type": "object"
+  }
+}

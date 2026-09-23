@@ -1,0 +1,33 @@
+{
+  "name": "Download PDF report",
+  "description": "Download the VMRay PDF report for a sample and write it to the playbook's shared storage.",
+  "uuid": "2ad7c5b5-929d-5da1-ad94-85f436175a3e",
+  "docker_parameters": "GetReportPdf",
+  "arguments": {
+    "properties": {
+      "sample_id": {
+        "title": "Sample Id",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "sample_id"
+    ],
+    "title": "GetReportPdfArguments",
+    "type": "object"
+  },
+  "results": {
+    "properties": {
+      "file_path": {
+        "description": "Path (relative to data_path) of the downloaded PDF report.",
+        "title": "File Path",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file_path"
+    ],
+    "title": "GetReportPdfResults",
+    "type": "object"
+  }
+}

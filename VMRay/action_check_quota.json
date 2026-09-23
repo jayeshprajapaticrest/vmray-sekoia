@@ -1,0 +1,30 @@
+{
+  "name": "Check quota",
+  "description": "Get this API key's VMRay quota limit and current usage.",
+  "uuid": "ea5a8265-1e90-5fae-ab72-34c76d5ad3a0",
+  "docker_parameters": "GetQuota",
+  "arguments": {
+    "description": "Takes nothing \u2014 GET /api_key/quota is keyed off the module's own credentials.",
+    "properties": {},
+    "title": "GetQuotaArguments",
+    "type": "object"
+  },
+  "results": {
+    "properties": {
+      "quota_limit": {
+        "title": "Quota Limit",
+        "type": "integer"
+      },
+      "used_quota": {
+        "title": "Used Quota",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "quota_limit",
+      "used_quota"
+    ],
+    "title": "GetQuotaResults",
+    "type": "object"
+  }
+}

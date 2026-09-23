@@ -1,0 +1,85 @@
+{
+  "name": "Submit file",
+  "description": "Submit a file, already staged on the playbook's shared storage, to VMRay for detonation.",
+  "uuid": "a562bbdc-1ef7-5358-8584-ee15329491c2",
+  "docker_parameters": "SubmitFile",
+  "arguments": {
+    "properties": {
+      "file_name": {
+        "description": "Name of the file, staged under the action's data_path, to submit.",
+        "title": "File Name",
+        "type": "string"
+      },
+      "reanalyze": {
+        "default": false,
+        "title": "Reanalyze",
+        "type": "boolean"
+      },
+      "analysis_caching": {
+        "default": true,
+        "title": "Analysis Caching",
+        "type": "boolean"
+      },
+      "tags": {
+        "description": "Tags applied to the VMRay submission, for audit trail on the VMRay side.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      }
+    },
+    "required": [
+      "file_name"
+    ],
+    "title": "SubmitFileArguments",
+    "type": "object"
+  },
+  "results": {
+    "properties": {
+      "submission_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Submission Id"
+      },
+      "sample_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Id"
+      },
+      "job_ids": {
+        "items": {
+          "type": "integer"
+        },
+        "title": "Job Ids",
+        "type": "array"
+      },
+      "errors": {
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Errors",
+        "type": "array"
+      }
+    },
+    "title": "SubmitResults",
+    "type": "object"
+  }
+}

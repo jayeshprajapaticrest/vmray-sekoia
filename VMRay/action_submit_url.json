@@ -1,0 +1,85 @@
+{
+  "name": "Submit URL",
+  "description": "Submit a URL to VMRay for detonation without waiting for the result.",
+  "uuid": "172dde4f-0be0-5057-a6a7-02421e887b12",
+  "docker_parameters": "SubmitUrl",
+  "arguments": {
+    "properties": {
+      "sample_url": {
+        "description": "URL to submit for detonation.",
+        "title": "Sample Url",
+        "type": "string"
+      },
+      "reanalyze": {
+        "default": false,
+        "title": "Reanalyze",
+        "type": "boolean"
+      },
+      "analysis_caching": {
+        "default": true,
+        "title": "Analysis Caching",
+        "type": "boolean"
+      },
+      "tags": {
+        "description": "Tags applied to the VMRay submission, for audit trail on the VMRay side.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      }
+    },
+    "required": [
+      "sample_url"
+    ],
+    "title": "SubmitUrlArguments",
+    "type": "object"
+  },
+  "results": {
+    "properties": {
+      "submission_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Submission Id"
+      },
+      "sample_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Sample Id"
+      },
+      "job_ids": {
+        "items": {
+          "type": "integer"
+        },
+        "title": "Job Ids",
+        "type": "array"
+      },
+      "errors": {
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Errors",
+        "type": "array"
+      }
+    },
+    "title": "SubmitResults",
+    "type": "object"
+  }
+}
