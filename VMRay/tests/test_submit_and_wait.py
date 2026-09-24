@@ -95,3 +95,21 @@ def test_submit_and_wait_submission_failed(requests_mock):
     assert result["submission_id"] is None
     assert result["errors"] == [{"submission_filename": "payload.url", "error_msg": "quota exceeded"}]
     assert action.outputs == {"submission_failed": True}
+
+
+def test_submit_and_wait_forwards_submission_options(requests_mock):
+    from urllib.parse import parse_qs
+
+    m = requests_mock.post(
+        f"{BASE_URL}/rest/sample/submit",
+        json=submit_response(submissions=[{"submission_id": 111}], samples=[{"sample_id": 222}]),
+    )
+    requests_mock.get(f"{BASE_URL}/rest/submission/111", json={"result": "ok", "data": {"submission_finished": True}})
+    requests_mock.get(f"{BASE_URL}/rest/sample/222", json={"result": "ok", "data": {"sample_verdict": "clean"}})
+    action = SubmitAndWait(module=make_module())
+
+    action.run({"sample_url": "http://evil.example/payload", "pull_time": 0.01, "max_jobs": 2, "enable_whois": True})
+
+    form = parse_qs(m.last_request.text)
+    assert form["max_jobs"] == ["2"]
+    assert form["enable_whois"] == ["True"]

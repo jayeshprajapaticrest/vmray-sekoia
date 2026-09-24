@@ -3,6 +3,7 @@
 **Status:** Design, pre-build
 **Prepared:** 2026-08-27
 **Revised:** 2026-09-16 — standalone connector dropped; design re-grounded on the official integration docs (`docs.sekoia.com/integration/`) and on shipped module source in `SEKOIA-IO/automation-library`.
+**Revised:** 2026-09-23 — three gaps found against the earlier TheHive/VMRay Cortex analyzer closed: `GetScreenshots` action (analysis-archive screenshots ZIP, `data_path` handoff), `sample_analyses`/`include_analyses` (per-VM-profile verdicts, `GET /analysis/sample/{id}`), and an itemized IOC breakdown in `RenderSummary` (previously counts-only via VTIs). Per-VTI severity scoring and all-type IOC push (vs. today's hash-only) remain open, tracked as v1.1 candidates.
 
 A working brief on Sekoia's platform and the shape of a VMRay sandbox integration into its alert lifecycle.
 
@@ -449,7 +450,8 @@ The payload above argues against pushing the fan-out into the playbook. Split as
 | Render analysis summary | `RenderSummary` | Pure transform. VTIs + classifications + threat names + ATT&CK + report deep link → one markdown string for `post-alerts/{uuid}/comments`. Keeps presentation out of the API actions. |
 | Download sample | `GetSample` | `GET /sample/{id}/file` → **encrypted ZIP** (not raw bytes), written to `data_path`. Exposes `encryption_password`. |
 | Download PDF report | `GetReportPdf` | `GET /sample/{id}/report` → PDF to `data_path`. Pairs with `post-reports/pdf` or a handoff node. |
-| Check quota | `GetQuota` | `GET /api_key/quota` → `{quota_limit, used_quota}`. Lets a playbook guard before detonating. |
+| Download screenshots | `GetScreenshots` | `GET /analysis/{id}/archive/screenshots` → ZIP to `data_path`. Same handoff pattern as `GetSample`/`GetReportPdf`; keyed by `analysis_id`, not `sample_id` — a sample can carry several analysis runs. |
+| ~~Check quota~~ | ~~`GetQuota`~~ | **Removed (2026-09-24)** — no playbook needed a pre-detonation quota guard. `GET /api_key/quota` remains documented in the API surface table above if it's ever wanted back. |
 
 The two **pure transform** actions make no VMRay calls — they are cheap, deterministic, and trivially unit-testable against fixture JSON. That separation is what keeps the API actions thin.
 
@@ -623,7 +625,11 @@ Two items originally sketched here are cut, not built: **`GetChildSamples`** —
 Built against the exact shipped format confirmed in `SEKOIA-IO/Community` (`Enrich_alerts_with_VirusTotal_Hash.json` dumped in full, not summarized — node schema, `outputs` linkage, `module_uuid`/`action_uuid` pairing, Condition-operator shape all taken directly from it). Files: `playbooks/VMRay_Manual_Detonation.json` (12 nodes), `playbooks/VMRay_Automatic_Enrichment.json` (12 nodes) — both validated (valid JSON, no dangling `outputs` references, every non-trigger node reachable).
 
 - **Template A — Manual detonation**: Manual Trigger → Get Alert → Get Events → extract hash → Condition (hash present?) → `SearchSample` → `GetAnalysisDetails` → `RenderSummary` → Comment → `IocsToIndicators` → Add IOC to collection. Miss/no-hash branches converge on one "no VMRay match" comment.
-- **Template B — Automatic**: Alert Created → Condition (urgency ≥ threshold) → same chain minus the Get Alert node (the trigger already carries `short_id`/`first_seen_at`/`last_seen_at` directly — confirmed from the trigger's own results schema, so Template B genuinely has one fewer node than Template A, exactly as flagged earlier in this document).
+- **Template B — Automatic** *(revised 2026-09-24 — hash **and** URL)*: Alert Created → urgency ≥ threshold → Get Alert → Get Events → three `Read JSON File` extractions → hash found? → `SearchSample` → `GetAnalysisDetails`; no hash, or hash unknown to VMRay → http(s) URL found? → `SubmitAndEnrich` (URL detonation). Both branches converge on one `RenderSummary` → comment → malicious? → `IocsToIndicators` → IOC collection. 19 nodes.
+  - **Field choice, measured, not guessed** — counted which fields the 252 parsers in `SEKOIA-IO/intake-formats` actually populate: `url.original` 82, `url.full` 20 (7 of them — incl. CrowdStrike Falcon and Retarus — set `url.full` *without* `url.original`, so both are needed); `file.hash.sha256` 46 / `md5` 31 / `sha1` 24, `process.hash.sha256/sha1/md5` 13/15/12. The previous template read `file.hash.sha256` only and missed md5/sha1-only parsers and process-execution hashes.
+  - **URLs filtered to `^https?://`** inside the JSONPath — ECS `url.original` is path-only (`/index.php`) in web-server logs, which VMRay can't detonate. Same guard as Sekoia's own `VirusTotal_Enrichement` template (`regex_match('^http.*')`). Two separate nodes because `jsonpath_ng`'s `|` union silently drops one side when combined with filters — verified on the exact version the `Utils` module pins (1.6.1).
+  - **Branch convergence** reads `node.9 if (node.9 is defined and node.9) else node.11['analysis']` — tested under Jinja's default, chainable and strict undefined modes, and with the skipped node absent *or* `None`. Still unconfirmed on a live tenant (spike 0.6).
+  - **Adds the malicious-only IOC push gate** the IOC-collection policy above requires; the previous template pushed on any VMRay hit.
 
 **Scope cut, made explicit rather than silent: v1 templates are hash-only.** `SubmitAndEnrich` takes `sample_url`/`file_name`, never a bare hash (by design — decision 3's observable scope). Converging a hash-hit path (`SearchSample`→`GetAnalysisDetails`) and a URL-fallback path (`SubmitAndEnrich`) into one graph would need one of two things this build can't confirm: either a shared downstream chain reading from *whichever* upstream node actually fired (untested whether Sekoia's Jinja can reference a node that never executed), or duplicating the render/comment/IOC chain for both paths, which pushes past 20 nodes. Neither was worth guessing at. **v1 ships the hash path only** — a miss comments "not in VMRay's history, no detonation performed" and stops. URL-triggered fresh detonation via `SubmitAndEnrich` is a documented v1.1 addition once node-convergence behaviour is confirmed on a live tenant.
 

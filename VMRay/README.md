@@ -17,19 +17,21 @@ Requires VMRay Platform **2026.2 or later** (recursive threat-name/classificatio
 | Action | Purpose |
 |---|---|
 | `SearchSample` | Look up a sample by hash. Zero quota, sub-second — run this before submitting anything. |
-| `SubmitUrl` / `SubmitFile` | Submit for detonation, fire-and-forget. |
+| `SubmitUrl` / `SubmitFile` | Submit for detonation, fire-and-forget. All submitting actions accept VMRay's submission options (`analyzer_mode`, `max_jobs`, `archive_action`, `net_scheme_name`, …); unset ones fall back to the VMRay user's analyzer settings. `shareable` (hash → VirusTotal) is always sent and defaults to `false`. |
 | `SubmitAndWait` | Submit and block until finished. Returns identifiers and verdict only. |
-| `GetAnalysisDetails` | VTIs, IOCs and MITRE ATT&CK for an existing sample, fetched concurrently. |
+| `GetAnalysisDetails` | VTIs, IOCs and MITRE ATT&CK for an existing sample, fetched concurrently. `ioc_severity_filter` narrows IOCs server-side; `analysis_verdict_filter` narrows `sample_analyses` (with `include_analyses`) client-side. |
 | `SubmitAndEnrich` | `SubmitAndWait` + `GetAnalysisDetails` in one node — what most playbooks should use. |
 | `GetSample` | Download the sample as an encrypted ZIP (default password `infected` unless overridden). |
 | `GetReportPdf` | Download the VMRay PDF report. |
-| `GetQuota` | Check this API key's quota before spending it on a detonation. |
-| `RenderSummary` | Pure transform — an analysis into one markdown comment. |
+| `GetScreenshots` | Download an analysis run's screenshots as a ZIP. |
+| `RenderSummary` | Pure transform — an analysis into one markdown comment, with an itemized IOC breakdown and per-analysis-run verdicts. |
 | `IocsToIndicators` | Pure transform — VMRay's IOC set into Sekoia's flat, typed indicator list. |
 
 ## Known limitations
 
-**No file attachment on a Sekoia alert or case.** Confirmed against Sekoia's own SIC OpenAPI spec — no such endpoint exists anywhere in it. `GetSample`'s ZIP and `GetReportPdf`'s PDF can only be surfaced as a deep link in a comment, or handed to a downstream node (TheHive, email, object storage). This is a platform gap, not something this module can work around.
+**No file attachment on a Sekoia alert or case.** Confirmed against Sekoia's own SIC OpenAPI spec — no such endpoint exists anywhere in it. `GetSample`'s ZIP, `GetReportPdf`'s PDF and `GetScreenshots`'s ZIP can only be surfaced as a deep link in a comment, or handed to a downstream node (TheHive, email, object storage). This is a platform gap, not something this module can work around.
+
+**`GetScreenshots` takes `analysis_id`, not `sample_id`.** A sample can carry several analysis runs (different VM profiles); each has its own screenshots. `sample_analyses[].analysis_id` (from `GetAnalysisDetails` with `include_analyses: true`) is the source for this argument.
 
 **`SubmitFile` needs an upstream node to supply the file.** Sekoia alerts do not carry sample bytes by default — this action reads from the playbook's shared storage, so something earlier in the playbook must have fetched and written the file there first.
 

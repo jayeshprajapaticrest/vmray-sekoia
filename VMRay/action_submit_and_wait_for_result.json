@@ -5,6 +5,129 @@
   "docker_parameters": "SubmitAndWait",
   "arguments": {
     "properties": {
+      "enable_reputation": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Run Reputation Analysis on the sample and its artifacts (hashes and URLs only are sent to third-party services, never the file itself).",
+        "title": "Enable Reputation"
+      },
+      "enable_whois": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Query domains seen during analysis against an external WHOIS service.",
+        "title": "Enable Whois"
+      },
+      "analyzer_mode": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Analysis types to run: 'reputation', 'reputation_static', 'reputation_static_dynamic', 'static_dynamic' or 'static'.",
+        "title": "Analyzer Mode"
+      },
+      "known_malicious": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Let Triage pre-filter known malicious samples (reputation + static).",
+        "title": "Known Malicious"
+      },
+      "known_benign": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Let Triage pre-filter known benign samples (reputation + static).",
+        "title": "Known Benign"
+      },
+      "max_jobs": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Cap on jobs Jobrules may create for this submission \u2014 bounds quota spend.",
+        "title": "Max Jobs"
+      },
+      "archive_action": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "How a submitted archive is handled: 'sample', 'compound_sample' or 'separate_samples'.",
+        "title": "Archive Action"
+      },
+      "archive_password": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Password of a submitted password-protected archive, if not a common one.",
+        "title": "Archive Password"
+      },
+      "shareable": {
+        "default": false,
+        "description": "Share the sample's hash with VirusTotal. Always sent; off unless explicitly enabled.",
+        "title": "Shareable",
+        "type": "boolean"
+      },
+      "net_scheme_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Network scheme for the analysis VM (e.g. 'Isolated'), sent via user_config.",
+        "title": "Net Scheme Name"
+      },
       "sample_url": {
         "anyOf": [
           {

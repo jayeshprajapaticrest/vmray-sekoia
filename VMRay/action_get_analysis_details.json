@@ -30,6 +30,33 @@
         "description": "Also fetch recursive children's threat_names/classifications (2026.2+ only, costs two extra calls).",
         "title": "Include Recursive",
         "type": "boolean"
+      },
+      "include_analyses": {
+        "default": false,
+        "description": "Also fetch per-VM-profile analysis runs (GET /analysis/sample/{id}), costs one extra call.",
+        "title": "Include Analyses",
+        "type": "boolean"
+      },
+      "ioc_severity_filter": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Restrict fetched IOCs to this severity server-side (VMRay's documented values: 'malicious' or 'suspicious'). Leave empty to fetch all severities.",
+        "title": "Ioc Severity Filter"
+      },
+      "analysis_verdict_filter": {
+        "description": "Only include analysis runs (requires include_analyses) whose analysis_verdict is one of these values (e.g. ['malicious', 'suspicious']). Filtered client-side, after fetch. Empty = no filtering.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Analysis Verdict Filter",
+        "type": "array"
       }
     },
     "required": [
@@ -40,6 +67,98 @@
   },
   "results": {
     "$defs": {
+      "AnalysisRun": {
+        "additionalProperties": true,
+        "description": "One entry from GET /analysis/sample/{id} -> a single VM-profile analysis\nrun. A sample can carry several of these (different sandbox profiles/\nplatforms); each has its own verdict, distinct from the aggregate\n`sample_verdict` on the base sample object.",
+        "properties": {
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Id"
+          },
+          "analysis_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Verdict"
+          },
+          "analysis_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Severity"
+          },
+          "analysis_vti_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Vti Score"
+          },
+          "analysis_configuration_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Configuration Name"
+          },
+          "analysis_created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Created"
+          },
+          "analysis_job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Job Id"
+          }
+        },
+        "title": "AnalysisRun",
+        "type": "object"
+      },
       "IOCSet": {
         "additionalProperties": true,
         "description": "The `iocs` object from GET /sample/{id}/iocs. Keys per the spec's\ndocumented ioc_type filter values.",
@@ -512,6 +631,13 @@
           "$ref": "#/$defs/MitreAttackTechnique"
         },
         "title": "Mitre Attack Techniques",
+        "type": "array"
+      },
+      "sample_analyses": {
+        "items": {
+          "$ref": "#/$defs/AnalysisRun"
+        },
+        "title": "Sample Analyses",
         "type": "array"
       },
       "submission_id": {

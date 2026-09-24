@@ -8,7 +8,7 @@ Action.execute()'s generic error handling, not a quiet branch outcome.
 
 from vmray_modules.base import VMRayAction
 from vmray_modules.models import SubmitFileArguments, SubmitResults
-from vmray_modules.submit_helpers import parse_submit_response
+from vmray_modules.submit_helpers import parse_submit_response, submission_params
 
 
 class SubmitFile(VMRayAction):
@@ -24,5 +24,6 @@ class SubmitFile(VMRayAction):
             tags=arguments.tags,
             reanalyze=arguments.reanalyze,
             analysis_caching=arguments.analysis_caching,
+            **submission_params(arguments),
         )
         return parse_submit_response(response)

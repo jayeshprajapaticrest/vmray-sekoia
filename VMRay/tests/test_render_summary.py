@@ -31,6 +31,19 @@ def full_analysis():
             {"id": "T1055", "name": "Process Injection", "tactics": ["Defense Evasion"]},
             {"id": "T1071.001", "name": "Web Protocols"},
         ],
+        "iocs": {
+            "domains": [{"domain": "evil.example"}],
+            "urls": [{"url": "http://evil.example/payload"}],
+            "ips": [{"ip_address": "203.0.113.5"}],
+        },
+        "sample_analyses": [
+            {
+                "analysis_id": 1,
+                "analysis_verdict": "malicious",
+                "analysis_vti_score": 98,
+                "analysis_configuration_name": "Windows 10",
+            },
+        ],
         "errors": {"iocs": "request timed out after 3 retries"},
     }
 
@@ -47,6 +60,34 @@ def test_render_summary_full(full_analysis):
     assert "[Full VMRay report](https://eu.cloud.vmray.com/samples/12345)" in content
     assert "1 child sample(s) extracted (list truncated by VMRay" in content
     assert "⚠️ _Partial data — these sections failed to load: iocs._" in content
+    assert "1 Domains" in content and "1 URLs" in content and "1 IPs" in content
+    assert "`evil.example`" in content
+    assert "`http://evil.example/payload`" in content
+    assert "`203.0.113.5`" in content
+    assert "**MALICIOUS** (VTI 98/100) — Windows 10" in content
+
+
+def test_render_summary_caps_iocs_per_type():
+    analysis = {
+        "sample_id": 1,
+        "iocs": {"domains": [{"domain": f"evil-{i}.example"} for i in range(15)]},
+    }
+    content = render_summary_from_dict(analysis)
+
+    assert "evil-9.example" in content  # 10th item, within the cap
+    assert "evil-10.example" not in content  # 11th item, beyond the cap
+    assert "...and 5 more" in content
+
+
+def test_render_summary_caps_analyses():
+    analysis = {
+        "sample_id": 1,
+        "sample_analyses": [{"analysis_id": i, "analysis_verdict": "clean"} for i in range(15)],
+    }
+    content = render_summary_from_dict(analysis)
+
+    assert content.count("**CLEAN**") == 10
+    assert "_...and 5 more_" in content
 
 
 def test_render_summary_minimal():

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Removed
+
+- `GetQuota` action (and the client's `GET /api_key/quota` call) — not needed by any playbook.
+
+### Added
+
+- `GetScreenshots` — download an analysis run's screenshots as a ZIP (`GET /analysis/{id}/archive/screenshots`), written to `data_path` for a downstream handoff (e.g. TheHive's `upload_logs`), same pattern as `GetSample`/`GetReportPdf`.
+- `GetAnalysisDetails` / `SubmitAndEnrich`: `include_analyses` toggle — fetches per-VM-profile analysis runs (`GET /analysis/sample/{id}`) into `sample_analyses`, each with its own verdict/severity/VTI score distinct from the sample-level aggregate. Default `false` — costs one extra call.
+- `RenderSummary`: itemized IOC breakdown (domains, IPs, URLs, dropped files, filenames, mutexes, registry keys, emails, email addresses — capped at 10 per type) and a per-analysis-run verdict section, both previously visible only via the full VMRay report link.
+- `GetAnalysisDetails` / `SubmitAndEnrich`: `ioc_severity_filter` — restricts fetched IOCs server-side to a single severity (VMRay's `ioc_severity` query param on `GET /sample/{id}/iocs`). Empty (default) fetches all severities.
+- `SubmitUrl` / `SubmitFile` / `SubmitAndWait` / `SubmitAndEnrich`: submission-time VMRay options — `enable_reputation`, `enable_whois`, `analyzer_mode`, `known_malicious`, `known_benign`, `max_jobs`, `archive_action`, `archive_password`, `shareable`, `net_scheme_name` (sent inside `user_config`). Unset options are omitted so the VMRay user's analyzer settings apply; `shareable` is the exception — always sent, default `false`, so a sample's hash never reaches VirusTotal unless explicitly enabled.
+- `GetAnalysisDetails` / `SubmitAndEnrich`: `analysis_verdict_filter` — keeps only `sample_analyses` runs (requires `include_analyses`) whose `analysis_verdict` matches one of the given values. Filtered client-side after fetch (VMRay's analysis-list endpoint has no server-side verdict filter). Empty (default) keeps every run.
+
 ## 2026-09-17 - 1.0.0
 
 ### Added

@@ -55,6 +55,9 @@ class SubmitAndEnrich(VMRayAction):
             include_iocs=arguments.include_iocs,
             include_mitre_attack=arguments.include_mitre_attack,
             include_recursive=arguments.include_recursive,
+            include_analyses=arguments.include_analyses,
+            ioc_severity_filter=arguments.ioc_severity_filter,
+            analysis_verdict_filter=arguments.analysis_verdict_filter,
         )
         self.set_output("completed", True)
 

@@ -267,6 +267,13 @@
             "title": "Mitre Attack Techniques",
             "type": "array"
           },
+          "sample_analyses": {
+            "items": {
+              "$ref": "#/$defs/AnalysisRun"
+            },
+            "title": "Sample Analyses",
+            "type": "array"
+          },
           "submission_id": {
             "anyOf": [
               {
@@ -327,6 +334,98 @@
           "sample_id"
         ],
         "title": "AnalysisDetails",
+        "type": "object"
+      },
+      "AnalysisRun": {
+        "additionalProperties": true,
+        "description": "One entry from GET /analysis/sample/{id} -> a single VM-profile analysis\nrun. A sample can carry several of these (different sandbox profiles/\nplatforms); each has its own verdict, distinct from the aggregate\n`sample_verdict` on the base sample object.",
+        "properties": {
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Id"
+          },
+          "analysis_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Verdict"
+          },
+          "analysis_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Severity"
+          },
+          "analysis_vti_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Vti Score"
+          },
+          "analysis_configuration_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Configuration Name"
+          },
+          "analysis_created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Created"
+          },
+          "analysis_job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Job Id"
+          }
+        },
+        "title": "AnalysisRun",
         "type": "object"
       },
       "IOCSet": {

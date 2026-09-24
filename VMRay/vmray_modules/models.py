@@ -95,6 +95,23 @@ class SampleChildRelation(BaseModel):
     relation_type: str | None = None
 
 
+class AnalysisRun(BaseModel):
+    """One entry from GET /analysis/sample/{id} -> a single VM-profile analysis
+    run. A sample can carry several of these (different sandbox profiles/
+    platforms); each has its own verdict, distinct from the aggregate
+    `sample_verdict` on the base sample object."""
+
+    model_config = {"extra": "allow"}
+
+    analysis_id: int | None = None
+    analysis_verdict: str | None = None
+    analysis_severity: str | None = None
+    analysis_vti_score: int | None = None
+    analysis_configuration_name: str | None = None
+    analysis_created: str | None = None
+    analysis_job_id: int | None = None
+
+
 # --------------------------------------------------------------------------
 # Analysis details — the assembled shape `GetAnalysisDetails` returns.
 #
@@ -144,6 +161,9 @@ class AnalysisDetails(BaseModel):
     # from GET /sample/{id}/mitre_attack
     mitre_attack_techniques: list[MitreAttackTechnique] = Field(default_factory=list)
 
+    # from GET /analysis/sample/{id} -- one entry per VM-profile analysis run
+    sample_analyses: list[AnalysisRun] = Field(default_factory=list)
+
     # submission/analysis provenance, not sample-scoped
     submission_id: int | None = None
     analysis_id: int | None = None
@@ -155,11 +175,59 @@ class AnalysisDetails(BaseModel):
 
 
 # --------------------------------------------------------------------------
+# Submission-time VMRay options, shared by every submitting action
+# --------------------------------------------------------------------------
+
+
+class SubmissionOptions(BaseModel):
+    """Optional POST /sample/submit form fields. `None` means "not sent" — the
+    VMRay user's own analyzer settings apply. `net_scheme_name` is not a form
+    field: it rides inside the `user_config` JSON string."""
+
+    enable_reputation: bool | None = Field(
+        default=None,
+        description="Run Reputation Analysis on the sample and its artifacts (hashes and URLs only are sent "
+        "to third-party services, never the file itself).",
+    )
+    enable_whois: bool | None = Field(
+        default=None, description="Query domains seen during analysis against an external WHOIS service."
+    )
+    analyzer_mode: str | None = Field(
+        default=None,
+        description="Analysis types to run: 'reputation', 'reputation_static', 'reputation_static_dynamic', "
+        "'static_dynamic' or 'static'.",
+    )
+    known_malicious: bool | None = Field(
+        default=None, description="Let Triage pre-filter known malicious samples (reputation + static)."
+    )
+    known_benign: bool | None = Field(
+        default=None, description="Let Triage pre-filter known benign samples (reputation + static)."
+    )
+    max_jobs: int | None = Field(
+        default=None, description="Cap on jobs Jobrules may create for this submission — bounds quota spend."
+    )
+    archive_action: str | None = Field(
+        default=None,
+        description="How a submitted archive is handled: 'sample', 'compound_sample' or 'separate_samples'.",
+    )
+    archive_password: str | None = Field(
+        default=None, description="Password of a submitted password-protected archive, if not a common one."
+    )
+    shareable: bool = Field(
+        default=False,
+        description="Share the sample's hash with VirusTotal. Always sent; off unless explicitly enabled.",
+    )
+    net_scheme_name: str | None = Field(
+        default=None, description="Network scheme for the analysis VM (e.g. 'Isolated'), sent via user_config."
+    )
+
+
+# --------------------------------------------------------------------------
 # SubmitAndWait
 # --------------------------------------------------------------------------
 
 
-class SubmitAndWaitArguments(BaseModel):
+class SubmitAndWaitArguments(SubmissionOptions):
     # Only URL and file are real detonation inputs (decided observable scope:
     # hash is a zero-cost lookup via SearchSample, never a submission here).
     # A bare sample_id "reanalyze" path was drafted early on but needs
@@ -205,6 +273,20 @@ class GetAnalysisDetailsArguments(BaseModel):
         description="Also fetch recursive children's threat_names/classifications "
         "(2026.2+ only, costs two extra calls).",
     )
+    include_analyses: bool = Field(
+        default=False,
+        description="Also fetch per-VM-profile analysis runs (GET /analysis/sample/{id}), costs one extra call.",
+    )
+    ioc_severity_filter: str | None = Field(
+        default=None,
+        description="Restrict fetched IOCs to this severity server-side (VMRay's documented values: "
+        "'malicious' or 'suspicious'). Leave empty to fetch all severities.",
+    )
+    analysis_verdict_filter: list[str] = Field(
+        default_factory=list,
+        description="Only include analysis runs (requires include_analyses) whose analysis_verdict is one of "
+        "these values (e.g. ['malicious', 'suspicious']). Filtered client-side, after fetch. Empty = no filtering.",
+    )
 
 
 # GetAnalysisDetailsResults == AnalysisDetails, reused directly.
@@ -219,6 +301,9 @@ class SubmitAndEnrichArguments(SubmitAndWaitArguments):
     include_iocs: bool = Field(default=True)
     include_mitre_attack: bool = Field(default=True)
     include_recursive: bool = Field(default=False)
+    include_analyses: bool = Field(default=False)
+    ioc_severity_filter: str | None = Field(default=None)
+    analysis_verdict_filter: list[str] = Field(default_factory=list)
 
 
 class SubmitAndEnrichResults(BaseModel):
@@ -240,7 +325,7 @@ class SubmitAndEnrichResults(BaseModel):
 # --------------------------------------------------------------------------
 
 
-class SubmitUrlArguments(BaseModel):
+class SubmitUrlArguments(SubmissionOptions):
     sample_url: str = Field(..., description="URL to submit for detonation.")
     reanalyze: bool = Field(default=False)
     analysis_caching: bool = Field(default=True)
@@ -250,7 +335,7 @@ class SubmitUrlArguments(BaseModel):
     )
 
 
-class SubmitFileArguments(BaseModel):
+class SubmitFileArguments(SubmissionOptions):
     file_name: str = Field(..., description="Name of the file, staged under the action's data_path, to submit.")
     reanalyze: bool = Field(default=False)
     analysis_caching: bool = Field(default=True)
@@ -340,18 +425,15 @@ class GetReportPdfResults(BaseModel):
     file_path: str = Field(..., description="Path (relative to data_path) of the downloaded PDF report.")
 
 
-# --------------------------------------------------------------------------
-# GetQuota
-# --------------------------------------------------------------------------
+class GetScreenshotsArguments(BaseModel):
+    analysis_id: int = Field(..., description="VMRay analysis_id (not sample_id) to fetch screenshots for.")
+    encryption_password: str | None = Field(
+        default=None, description="Password to protect the returned ZIP with, if the archive requires one."
+    )
 
 
-class GetQuotaArguments(BaseModel):
-    """Takes nothing — GET /api_key/quota is keyed off the module's own credentials."""
-
-
-class GetQuotaResults(BaseModel):
-    quota_limit: int
-    used_quota: int
+class GetScreenshotsResults(BaseModel):
+    file_path: str = Field(..., description="Path (relative to data_path) of the downloaded screenshots ZIP.")
 
 
 # --------------------------------------------------------------------------

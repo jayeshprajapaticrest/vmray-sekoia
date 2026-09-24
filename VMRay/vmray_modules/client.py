@@ -12,7 +12,7 @@ object survives past the exception to work.
 Loosely modelled on the Cortex-Analyzers VMRay analyzer's client (structure,
 exception hierarchy, retry-adapter pattern) — adapted, not copied: retry
 budget raised to 5 attempts (this module's documented contract), full
-endpoint coverage added (quota, system_info, reanalyze), and errors are
+endpoint coverage added (system_info, reanalyze), and errors are
 raised as typed exceptions for the caller to catch per-section rather than
 letting one failure abort a whole fan-out.
 
@@ -97,7 +97,6 @@ class VMRayClient:
 
     # -- endpoint paths, one place, matching the OpenAPI spec verbatim -----
     _system_info = "/rest/system_info"
-    _quota = "/rest/api_key/quota"
     _submit = "/rest/sample/submit"
     _submission = "/rest/submission/{submission_id}"
     _sample = "/rest/sample/{sample_id}"
@@ -110,7 +109,9 @@ class VMRayClient:
     _sample_threat_names = "/rest/sample/{sample_id}/threat_names"
     _sample_classifications = "/rest/sample/{sample_id}/classifications"
     _sample_relations = "/rest/sample_relation/sample/{sample_id}"
+    _sample_analyses = "/rest/analysis/sample/{sample_id}"
     _analysis_reanalyze = "/rest/analysis/{analysis_id}/reanalyze"
+    _analysis_archive = "/rest/analysis/{analysis_id}/archive/{filename}"
     _continuation = "/rest/continuation/{continuation_id}"
 
     def __init__(
@@ -193,13 +194,10 @@ class VMRayClient:
 
         return data
 
-    # -- system / account ----------------------------------------------
+    # -- system -----------------------------------------------------------
 
     def system_info(self) -> dict[str, Any]:
         return self._check_response(self.session.get(self._url(self._system_info)))
-
-    def quota(self) -> dict[str, Any]:
-        return self._check_response(self.session.get(self._url(self._quota)))
 
     # -- submission -------------------------------------------------------
 
@@ -295,6 +293,28 @@ class VMRayClient:
         """Fallback only — the base sample object's `sample_child_relations`
         is preferred and only truncated for very large families."""
         return self._check_response(self.session.get(self._url(self._sample_relations.format(sample_id=sample_id))))
+
+    def get_sample_analyses(self, sample_id: int) -> list[dict[str, Any]]:
+        """Per-VM-profile analysis runs for a sample (one sample can carry
+        several analyses — different sandbox profiles/platforms). Each item
+        carries its own `analysis_verdict`/`analysis_severity`/`analysis_vti_score`,
+        distinct from the aggregate on the base sample object."""
+        return self._check_response(self.session.get(self._url(self._sample_analyses.format(sample_id=sample_id))))
+
+    def get_analysis_archive(
+        self, analysis_id: int, filename: str = "screenshots", encryption_password: str | None = None
+    ) -> bytes:
+        """Download a file (or filtered archive) from an analysis's archive.
+        `filename="screenshots"` returns a ZIP of every screenshot for that
+        analysis run — the documented shortcut (vs. listing individual
+        screenshot paths first). May be password-protected depending on the
+        VMRay user's settings, hence `encryption_password`."""
+        params = _drop_none({"encryption_password": encryption_password})
+        res = self.session.get(
+            self._url(self._analysis_archive.format(analysis_id=analysis_id, filename=filename)), params=params
+        )
+        self._raise_for_status(res)
+        return res.content
 
     def get_sample_file(self, sample_id: int, encryption_password: str | None = None) -> bytes:
         """Returns the sample wrapped in an encrypted ZIP — never raw bytes.

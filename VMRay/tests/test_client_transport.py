@@ -22,16 +22,16 @@ def test_requests_mock_does_not_exercise_our_retry_adapter(requests_mock):
     against a real local socket — the only way to prove it honestly.
     """
     requests_mock.get(
-        f"{BASE_URL}/rest/api_key/quota",
+        f"{BASE_URL}/rest/system_info",
         [
             {"status_code": 500, "json": {"error_msg": "boom"}},
-            {"json": {"result": "ok", "data": {"quota_limit": 1, "used_quota": 0}}},
+            {"json": {"result": "ok", "data": {"version": "2026.2.1"}}},
         ],
     )
     client = VMRayClient(base_url=BASE_URL, api_key="x")
 
     with pytest.raises(BadResponseError):
-        client.quota()
+        client.system_info()
 
     assert requests_mock.call_count == 1  # no retry happened — this is the limitation, not a passing feature
 
@@ -41,11 +41,11 @@ def test_retry_exhaustion_raises_bad_response_error(requests_mock):
     silently return an empty result — true regardless of whether retries
     fired first (they don't, under requests_mock; they do for real, see
     test_client_retry_real_transport.py)."""
-    requests_mock.get(f"{BASE_URL}/rest/api_key/quota", status_code=503, json={"error_msg": "down"})
+    requests_mock.get(f"{BASE_URL}/rest/system_info", status_code=503, json={"error_msg": "down"})
     client = VMRayClient(base_url=BASE_URL, api_key="x")
 
     with pytest.raises(BadResponseError):
-        client.quota()
+        client.system_info()
 
 
 def test_4xx_does_not_retry_and_raises_immediately(requests_mock):

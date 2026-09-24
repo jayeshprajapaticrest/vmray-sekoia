@@ -9,6 +9,7 @@ A 200 here does NOT mean the sample was accepted — `data.errors` must be
 checked explicitly (design doc, "HTTP client contract").
 """
 
+import json
 import time
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,29 @@ from typing import Any
 from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.client import VMRayClient
-from vmray_modules.models import SubmitAndWaitArguments, SubmitAndWaitResults, SubmitResults
+from vmray_modules.models import SubmissionOptions, SubmitAndWaitArguments, SubmitAndWaitResults, SubmitResults
+
+_FORM_OPTIONS = {
+    "enable_reputation",
+    "enable_whois",
+    "analyzer_mode",
+    "known_malicious",
+    "known_benign",
+    "max_jobs",
+    "archive_action",
+    "archive_password",
+    "shareable",
+}
+
+
+def submission_params(options: SubmissionOptions) -> dict[str, Any]:
+    """Extra POST /sample/submit form fields. Unset options are omitted so the
+    VMRay user's analyzer defaults apply; net_scheme_name isn't a form field
+    and goes inside the user_config JSON string instead."""
+    params = options.model_dump(include=_FORM_OPTIONS, exclude_none=True)
+    if options.net_scheme_name:
+        params["user_config"] = json.dumps({"net_scheme_name": options.net_scheme_name})
+    return params
 
 
 def parse_submit_response(data: dict[str, Any]) -> SubmitResults:
@@ -40,6 +63,7 @@ def submit(client: VMRayClient, data_path: Path, arguments: SubmitAndWaitArgumen
             tags=arguments.tags,
             reanalyze=arguments.reanalyze,
             analysis_caching=arguments.analysis_caching,
+            **submission_params(arguments),
         )
     if arguments.file_name:
         return client.submit_file(
@@ -48,6 +72,7 @@ def submit(client: VMRayClient, data_path: Path, arguments: SubmitAndWaitArgumen
             tags=arguments.tags,
             reanalyze=arguments.reanalyze,
             analysis_caching=arguments.analysis_caching,
+            **submission_params(arguments),
         )
     raise MissingActionArgumentError("sample_url or file_name")
 

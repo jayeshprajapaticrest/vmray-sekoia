@@ -5,6 +5,129 @@
   "docker_parameters": "SubmitAndEnrich",
   "arguments": {
     "properties": {
+      "enable_reputation": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Run Reputation Analysis on the sample and its artifacts (hashes and URLs only are sent to third-party services, never the file itself).",
+        "title": "Enable Reputation"
+      },
+      "enable_whois": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Query domains seen during analysis against an external WHOIS service.",
+        "title": "Enable Whois"
+      },
+      "analyzer_mode": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Analysis types to run: 'reputation', 'reputation_static', 'reputation_static_dynamic', 'static_dynamic' or 'static'.",
+        "title": "Analyzer Mode"
+      },
+      "known_malicious": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Let Triage pre-filter known malicious samples (reputation + static).",
+        "title": "Known Malicious"
+      },
+      "known_benign": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Let Triage pre-filter known benign samples (reputation + static).",
+        "title": "Known Benign"
+      },
+      "max_jobs": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Cap on jobs Jobrules may create for this submission \u2014 bounds quota spend.",
+        "title": "Max Jobs"
+      },
+      "archive_action": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "How a submitted archive is handled: 'sample', 'compound_sample' or 'separate_samples'.",
+        "title": "Archive Action"
+      },
+      "archive_password": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Password of a submitted password-protected archive, if not a common one.",
+        "title": "Archive Password"
+      },
+      "shareable": {
+        "default": false,
+        "description": "Share the sample's hash with VirusTotal. Always sent; off unless explicitly enabled.",
+        "title": "Shareable",
+        "type": "boolean"
+      },
+      "net_scheme_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Network scheme for the analysis VM (e.g. 'Isolated'), sent via user_config.",
+        "title": "Net Scheme Name"
+      },
       "sample_url": {
         "anyOf": [
           {
@@ -87,6 +210,30 @@
         "default": false,
         "title": "Include Recursive",
         "type": "boolean"
+      },
+      "include_analyses": {
+        "default": false,
+        "title": "Include Analyses",
+        "type": "boolean"
+      },
+      "ioc_severity_filter": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Ioc Severity Filter"
+      },
+      "analysis_verdict_filter": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Analysis Verdict Filter",
+        "type": "array"
       }
     },
     "title": "SubmitAndEnrichArguments",
@@ -342,6 +489,13 @@
             "title": "Mitre Attack Techniques",
             "type": "array"
           },
+          "sample_analyses": {
+            "items": {
+              "$ref": "#/$defs/AnalysisRun"
+            },
+            "title": "Sample Analyses",
+            "type": "array"
+          },
           "submission_id": {
             "anyOf": [
               {
@@ -402,6 +556,98 @@
           "sample_id"
         ],
         "title": "AnalysisDetails",
+        "type": "object"
+      },
+      "AnalysisRun": {
+        "additionalProperties": true,
+        "description": "One entry from GET /analysis/sample/{id} -> a single VM-profile analysis\nrun. A sample can carry several of these (different sandbox profiles/\nplatforms); each has its own verdict, distinct from the aggregate\n`sample_verdict` on the base sample object.",
+        "properties": {
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Id"
+          },
+          "analysis_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Verdict"
+          },
+          "analysis_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Severity"
+          },
+          "analysis_vti_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Vti Score"
+          },
+          "analysis_configuration_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Configuration Name"
+          },
+          "analysis_created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Created"
+          },
+          "analysis_job_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Analysis Job Id"
+          }
+        },
+        "title": "AnalysisRun",
         "type": "object"
       },
       "IOCSet": {

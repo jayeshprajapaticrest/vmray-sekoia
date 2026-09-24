@@ -5,12 +5,15 @@ it stays cheap, deterministic and trivially unit-testable against fixture
 JSON (design doc, "Aggregation belongs in the module, not the playbook").
 """
 
+from typing import Any
+
 import orjson
 from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.base import VMRayAction
 from vmray_modules.models import (
     AnalysisDetails,
+    AnalysisRun,
     MitreAttackTechnique,
     RenderSummaryArguments,
     RenderSummaryResults,
@@ -19,6 +22,24 @@ from vmray_modules.models import (
 
 _MAX_THREAT_INDICATORS = 10
 _MAX_MITRE_TECHNIQUES = 10
+_MAX_IOCS_PER_TYPE = 10
+_MAX_ANALYSES = 10
+
+# (IOCSet field name, payload key on each item, display label) — payload key
+# per the VMRay OpenAPI spec's IOC serializers (DomainIOCSerializer,
+# IPIOCSerializer, etc.), same mapping the Cortex-Analyzers VMRay analyzer
+# used in production.
+_IOC_TYPES = (
+    ("domains", "domain", "Domains"),
+    ("ips", "ip_address", "IPs"),
+    ("urls", "url", "URLs"),
+    ("files", "filename", "Dropped files"),
+    ("filenames", "filename", "Filenames"),
+    ("mutexes", "mutex_name", "Mutexes"),
+    ("registry", "reg_key_name", "Registry keys"),
+    ("emails", "sender", "Emails"),
+    ("email_addresses", "email_address", "Email addresses"),
+)
 
 
 def _render_threat_indicator(vti: ThreatIndicator) -> str:
@@ -36,6 +57,26 @@ def _render_mitre_technique(technique: MitreAttackTechnique) -> str:
     if technique.tactics:
         label += f" ({', '.join(technique.tactics)})"
     return label
+
+
+def _ioc_values(items: list[dict[str, Any]], payload_key: str) -> list[str]:
+    values = [str(item[payload_key]) for item in items[:_MAX_IOCS_PER_TYPE] if item.get(payload_key)]
+    remaining = len(items) - _MAX_IOCS_PER_TYPE
+    if remaining > 0:
+        values.append(f"...and {remaining} more")
+    return values
+
+
+def _render_analysis_run(run: AnalysisRun) -> str:
+    verdict = (run.analysis_verdict or "unknown").upper()
+    bits = [f"**{verdict}**"]
+    if run.analysis_vti_score is not None:
+        bits.append(f"(VTI {run.analysis_vti_score}/100)")
+    if run.analysis_configuration_name:
+        bits.append(f"— {run.analysis_configuration_name}")
+    if run.analysis_created:
+        bits.append(f"— {run.analysis_created}")
+    return " ".join(bits)
 
 
 def render_summary(details: AnalysisDetails) -> str:
@@ -64,6 +105,17 @@ def render_summary(details: AnalysisDetails) -> str:
     if details.sample_filename:
         lines.append(f"**Filename:** {details.sample_filename}")
 
+    iocs = details.iocs.model_dump()
+    ioc_type_counts = [(label, len(iocs.get(field, []))) for field, _payload_key, label in _IOC_TYPES]
+    if any(count for _label, count in ioc_type_counts):
+        lines.append("")
+        lines.append("**IOCs:** " + ", ".join(f"{count} {label}" for label, count in ioc_type_counts if count))
+        for field, payload_key, label in _IOC_TYPES:
+            items = iocs.get(field, [])
+            if not items:
+                continue
+            lines.append(f"- _{label}_: " + ", ".join(f"`{v}`" for v in _ioc_values(items, payload_key)))
+
     if details.threat_indicators:
         lines.append("")
         lines.append("**Top VMRay Threat Identifiers:**")
@@ -77,6 +129,15 @@ def render_summary(details: AnalysisDetails) -> str:
         techniques = [_render_mitre_technique(t) for t in details.mitre_attack_techniques[:_MAX_MITRE_TECHNIQUES]]
         lines.append("")
         lines.append(f"**MITRE ATT&CK:** {'; '.join(techniques)}")
+
+    if details.sample_analyses:
+        lines.append("")
+        lines.append("**Analyses:**")
+        for run in details.sample_analyses[:_MAX_ANALYSES]:
+            lines.append(f"- {_render_analysis_run(run)}")
+        remaining = len(details.sample_analyses) - _MAX_ANALYSES
+        if remaining > 0:
+            lines.append(f"- _...and {remaining} more_")
 
     if details.sample_child_sample_ids:
         note = f"{len(details.sample_child_sample_ids)} child sample(s) extracted"
@@ -102,8 +163,8 @@ class RenderSummary(VMRayAction):
 
     name = "Render analysis summary"
     description = (
-        "Render VTIs, classifications, threat names, MITRE ATT&CK and a report link "
-        "from a VMRay analysis into one markdown comment"
+        "Render VTIs, itemized IOCs, classifications, threat names, per-analysis verdicts, "
+        "MITRE ATT&CK and a report link from a VMRay analysis into one markdown comment"
     )
     results_model = RenderSummaryResults
 

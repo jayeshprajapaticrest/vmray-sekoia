@@ -132,3 +132,131 @@ def test_not_truncated_never_calls_relations_fallback(requests_mock):
     action = GetAnalysisDetails(module=make_module())
 
     action.run({"sample_id": 42, "include_vtis": False, "include_iocs": False, "include_mitre_attack": False})
+
+
+def test_include_analyses_fetches_per_vm_profile_runs(requests_mock):
+    mock_base_sample(requests_mock)
+    requests_mock.get(
+        f"{BASE_URL}/rest/analysis/sample/42",
+        json={
+            "result": "ok",
+            "data": [
+                {"analysis_id": 1, "analysis_verdict": "malicious", "analysis_configuration_name": "Windows 10"},
+                {"analysis_id": 2, "analysis_verdict": "suspicious", "analysis_configuration_name": "Windows 7"},
+            ],
+        },
+    )
+    action = GetAnalysisDetails(module=make_module())
+
+    result = action.run(
+        {
+            "sample_id": 42,
+            "include_vtis": False,
+            "include_iocs": False,
+            "include_mitre_attack": False,
+            "include_analyses": True,
+        }
+    )
+
+    assert len(result["sample_analyses"]) == 2
+    assert result["sample_analyses"][0]["analysis_verdict"] == "malicious"
+
+
+def test_analyses_not_fetched_by_default(requests_mock):
+    """No mock registered for analysis/sample — a call there would raise
+    NoMockAddress and fail the test, proving include_analyses defaults off."""
+    mock_base_sample(requests_mock)
+    action = GetAnalysisDetails(module=make_module())
+
+    result = action.run({"sample_id": 42, "include_vtis": False, "include_iocs": False, "include_mitre_attack": False})
+
+    assert result["sample_analyses"] == []
+
+
+def test_ioc_severity_filter_passed_to_iocs_call(requests_mock):
+    mock_base_sample(requests_mock)
+    m = requests_mock.get(
+        f"{BASE_URL}/rest/sample/42/iocs",
+        json={"result": "ok", "data": {"iocs": {"urls": [{"url": "http://evil.example", "severity": "malicious"}]}}},
+    )
+    action = GetAnalysisDetails(module=make_module())
+
+    action.run(
+        {
+            "sample_id": 42,
+            "include_vtis": False,
+            "include_mitre_attack": False,
+            "ioc_severity_filter": "malicious",
+        }
+    )
+
+    assert m.last_request.qs == {"ioc_severity": ["malicious"]}
+
+
+def test_no_ioc_severity_filter_omits_query_param(requests_mock):
+    mock_base_sample(requests_mock)
+    m = requests_mock.get(
+        f"{BASE_URL}/rest/sample/42/iocs",
+        json={"result": "ok", "data": {"iocs": {}}},
+    )
+    action = GetAnalysisDetails(module=make_module())
+
+    action.run({"sample_id": 42, "include_vtis": False, "include_mitre_attack": False})
+
+    assert m.last_request.qs == {}
+
+
+def test_analysis_verdict_filter_keeps_only_matching_runs(requests_mock):
+    mock_base_sample(requests_mock)
+    requests_mock.get(
+        f"{BASE_URL}/rest/analysis/sample/42",
+        json={
+            "result": "ok",
+            "data": [
+                {"analysis_id": 1, "analysis_verdict": "malicious"},
+                {"analysis_id": 2, "analysis_verdict": "suspicious"},
+                {"analysis_id": 3, "analysis_verdict": "clean"},
+            ],
+        },
+    )
+    action = GetAnalysisDetails(module=make_module())
+
+    result = action.run(
+        {
+            "sample_id": 42,
+            "include_vtis": False,
+            "include_iocs": False,
+            "include_mitre_attack": False,
+            "include_analyses": True,
+            "analysis_verdict_filter": ["malicious", "suspicious"],
+        }
+    )
+
+    assert {r["analysis_id"] for r in result["sample_analyses"]} == {1, 2}
+
+
+def test_analysis_verdict_filter_empty_keeps_everything(requests_mock):
+    mock_base_sample(requests_mock)
+    requests_mock.get(
+        f"{BASE_URL}/rest/analysis/sample/42",
+        json={
+            "result": "ok",
+            "data": [
+                {"analysis_id": 1, "analysis_verdict": "malicious"},
+                {"analysis_id": 2, "analysis_verdict": "clean"},
+            ],
+        },
+    )
+    action = GetAnalysisDetails(module=make_module())
+
+    result = action.run(
+        {
+            "sample_id": 42,
+            "include_vtis": False,
+            "include_iocs": False,
+            "include_mitre_attack": False,
+            "include_analyses": True,
+        }
+    )
+
+    assert len(result["sample_analyses"]) == 2

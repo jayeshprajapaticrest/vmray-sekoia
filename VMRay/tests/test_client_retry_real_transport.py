@@ -66,13 +66,13 @@ def test_5xx_is_actually_retried_over_real_sockets(scripted_server):
     _ScriptedHandler.script = [
         (500, {}, {"error_msg": "boom"}),
         (500, {}, {"error_msg": "boom"}),
-        (200, {}, {"result": "ok", "data": {"quota_limit": 1, "used_quota": 0}}),
+        (200, {}, {"result": "ok", "data": {"version": "2026.2.1"}}),
     ]
     client = VMRayClient(base_url=base_url, api_key="x")
 
-    result = client.quota()
+    result = client.system_info()
 
-    assert result == {"quota_limit": 1, "used_quota": 0}
+    assert result == {"version": "2026.2.1"}
     assert len(_ScriptedHandler.request_times) == 3  # two real failures, genuinely retried
 
 
@@ -83,7 +83,7 @@ def test_retry_exhaustion_over_real_sockets_eventually_raises(scripted_server):
     client = VMRayClient(base_url=base_url, api_key="x")
 
     with pytest.raises(BadResponseError):
-        client.quota()
+        client.system_info()
 
     # total=5 in the mounted Retry -> 1 initial attempt + 5 retries = 6
     assert len(_ScriptedHandler.request_times) == 6
@@ -97,13 +97,13 @@ def test_429_retry_after_is_actually_honoured(scripted_server):
     base_url = scripted_server
     _ScriptedHandler.script = [
         (429, {"Retry-After": "1"}, {"error_msg": "throttled"}),
-        (200, {}, {"result": "ok", "data": {"quota_limit": 1, "used_quota": 0}}),
+        (200, {}, {"result": "ok", "data": {"version": "2026.2.1"}}),
     ]
     client = VMRayClient(base_url=base_url, api_key="x")
 
-    result = client.quota()
+    result = client.system_info()
 
-    assert result == {"quota_limit": 1, "used_quota": 0}
+    assert result == {"version": "2026.2.1"}
     assert len(_ScriptedHandler.request_times) == 2
     gap = _ScriptedHandler.request_times[1] - _ScriptedHandler.request_times[0]
     assert gap >= 0.9  # honoured the 1-second Retry-After, not a faster default backoff

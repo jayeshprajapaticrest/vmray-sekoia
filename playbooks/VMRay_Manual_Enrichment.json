@@ -1,6 +1,6 @@
 {
-  "name": "VMRay: Enrich new alerts (hash lookup, URL detonation)",
-  "uuid": "017c636c-046e-4585-9279-fc15f88556c3",
+  "name": "VMRay: Enrich alert on demand (hash lookup, URL detonation)",
+  "uuid": "0c779e43-fee3-4e15-92de-86ec2c0e177d",
   "tags": [
     "Alerts",
     "Enrichment",
@@ -8,37 +8,23 @@
   ],
   "nodes": {
     "0": {
-      "name": "Alert Created",
+      "name": "Manual Trigger",
       "type": "trigger",
       "outputs": {
-        "default": ["1"]
+        "default": [
+          "2"
+        ]
       },
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a",
-      "trigger_uuid": "785583cf-4377-43ce-a5fb-f4572eb57456"
-    },
-    "1": {
-      "name": "Urgency above threshold?",
-      "type": "operator",
-      "subtype": "condition",
-      "cases": [
-        {
-          "left": "{{ node.0['urgency'] }}",
-          "name": "Above threshold",
-          "right": "{{ 70 }}",
-          "comparison": ">=",
-          "description": "Guards VMRay quota: the URL branch detonates. Edit the threshold (70), or replace with a rule-name check."
-        }
-      ],
-      "outputs": {
-        "Above threshold": ["2"],
-        "else": []
-      }
+      "trigger_uuid": "fc26eb9f-b272-4c15-b3bf-ace397c0dc57"
     },
     "2": {
       "name": "Get Alert",
       "type": "action",
       "outputs": {
-        "default": ["3"]
+        "default": [
+          "3"
+        ]
       },
       "arguments": {
         "uuid": "{{ node.0['alert_uuid'] }}",
@@ -51,7 +37,9 @@
       "name": "Get Events",
       "type": "action",
       "outputs": {
-        "default": ["4"]
+        "default": [
+          "4"
+        ]
       },
       "arguments": {
         "query": "alert_short_ids: \"{{ node.2['short_id'] }}\"",
@@ -65,7 +53,9 @@
       "name": "Extract file hashes",
       "type": "action",
       "outputs": {
-        "default": ["5"]
+        "default": [
+          "5"
+        ]
       },
       "arguments": {
         "file": "{{ node.3['events'] }}",
@@ -80,7 +70,9 @@
       "name": "Extract URLs (url.full)",
       "type": "action",
       "outputs": {
-        "default": ["6"]
+        "default": [
+          "6"
+        ]
       },
       "arguments": {
         "file": "{{ node.3['events'] }}",
@@ -95,7 +87,9 @@
       "name": "Extract URLs (url.original)",
       "type": "action",
       "outputs": {
-        "default": ["7"]
+        "default": [
+          "7"
+        ]
       },
       "arguments": {
         "file": "{{ node.3['events'] }}",
@@ -120,16 +114,24 @@
         }
       ],
       "outputs": {
-        "Hash found": ["8"],
-        "else": ["10"]
+        "Hash found": [
+          "8"
+        ],
+        "else": [
+          "10"
+        ]
       }
     },
     "8": {
       "name": "VMRay: Search sample by hash",
       "type": "action",
       "outputs": {
-        "found": ["9"],
-        "not_found": ["10"]
+        "found": [
+          "9"
+        ],
+        "not_found": [
+          "10"
+        ]
       },
       "arguments": {
         "hash": "{{ node.4['output'][0] }}"
@@ -141,7 +143,9 @@
       "name": "VMRay: Get analysis details",
       "type": "action",
       "outputs": {
-        "default": ["12"]
+        "default": [
+          "12"
+        ]
       },
       "arguments": {
         "sample_id": "{{ node.8['analysis']['sample_id'] }}",
@@ -167,18 +171,30 @@
         }
       ],
       "outputs": {
-        "URL found": ["11"],
-        "else": ["17"]
+        "URL found": [
+          "11"
+        ],
+        "else": [
+          "17"
+        ]
       }
     },
     "11": {
       "name": "VMRay: Submit URL and enrich",
       "type": "action",
       "outputs": {
-        "completed": ["12"],
-        "timed_out": ["18"],
-        "submission_failed": ["18"],
-        "sample_id_missing": ["18"]
+        "completed": [
+          "12"
+        ],
+        "timed_out": [
+          "18"
+        ],
+        "submission_failed": [
+          "18"
+        ],
+        "sample_id_missing": [
+          "18"
+        ]
       },
       "arguments": {
         "sample_url": "{{ (node.5['output'] + node.6['output'])[0] }}",
@@ -194,7 +210,9 @@
       "name": "VMRay: Render analysis summary",
       "type": "action",
       "outputs": {
-        "default": ["13"]
+        "default": [
+          "13"
+        ]
       },
       "arguments": {
         "analysis": "{{ node.9 if (node.9 is defined and node.9) else node.11['analysis'] }}"
@@ -206,7 +224,9 @@
       "name": "Comment Alert",
       "type": "action",
       "outputs": {
-        "default": ["14"]
+        "default": [
+          "14"
+        ]
       },
       "arguments": {
         "uuid": "{{ node.0['alert_uuid'] }}",
@@ -230,7 +250,9 @@
         }
       ],
       "outputs": {
-        "Malicious": ["15"],
+        "Malicious": [
+          "15"
+        ],
         "else": []
       }
     },
@@ -238,7 +260,9 @@
       "name": "VMRay: IOCs to indicator list",
       "type": "action",
       "outputs": {
-        "default": ["16"]
+        "default": [
+          "16"
+        ]
       },
       "arguments": {
         "iocs": "{{ node.9 if (node.9 is defined and node.9) else node.11['analysis'] }}"
@@ -291,5 +315,5 @@
     }
   },
   "workspace": "Operation Center",
-  "description": "Runs on every new alert above an urgency threshold. Gets the alert and its events, then extracts a file hash (file.hash.* / process.hash.*, sha256/sha1/md5) and http(s) URLs (url.full, url.original). A hash is looked up in VMRay's existing history first (zero quota); if there is no hash, or VMRay has never seen it, the first URL is detonated (consumes VMRay quota, waits up to 30 min). Either result is rendered as one alert comment; malicious verdicts also push dropped-file hashes to an IOC collection. Before use: replace ioc_collection_id on 'Add hashes to IOC Collection' with a real Sekoia IOC collection UUID, and tune the urgency threshold (70)."
+  "description": "Run by an analyst on a single alert. Gets the alert and its events, then extracts a file hash (file.hash.* / process.hash.*, sha256/sha1/md5) and http(s) URLs (url.full, url.original). A hash is looked up in VMRay's existing history first (zero quota); if there is no hash, or VMRay has never seen it, the first URL is detonated (consumes VMRay quota, waits up to 30 min). Either result is rendered as one alert comment; malicious verdicts also push dropped-file hashes to an IOC collection. Before use: replace ioc_collection_id on 'Add hashes to IOC Collection' with a real Sekoia IOC collection UUID."
 }

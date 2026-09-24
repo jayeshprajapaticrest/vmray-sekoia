@@ -1,6 +1,6 @@
 {
   "name": "Render analysis summary",
-  "description": "Render VTIs, classifications, threat names, MITRE ATT&CK and a report link from a VMRay analysis into one markdown comment",
+  "description": "Render VTIs, itemized IOCs, classifications, threat names, per-analysis verdicts, MITRE ATT&CK and a report link from a VMRay analysis into one markdown comment",
   "uuid": "54e8dd0c-3cf6-5919-9f63-cbef20ae72f3",
   "docker_parameters": "RenderSummary",
   "arguments": {

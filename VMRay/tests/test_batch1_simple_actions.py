@@ -1,5 +1,5 @@
-"""Tests for the four simple, single-call actions: SearchSample, GetQuota,
-GetSample, GetReportPdf. Mocked at the requests transport layer via
+"""Tests for the simple, single-call actions: SearchSample, GetSample,
+GetReportPdf, GetScreenshots. Mocked at the requests transport layer via
 requests_mock — this also exercises the client's real error-envelope logic
 (_check_response), not a mocked-out client."""
 
@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from vmray_modules.get_quota_action import GetQuota
 from vmray_modules.get_report_pdf_action import GetReportPdf
 from vmray_modules.get_sample_action import GetSample
+from vmray_modules.get_screenshots_action import GetScreenshots
 from vmray_modules.models import VMRayConfiguration, VMRayModule
 from vmray_modules.search_sample_action import SearchSample
 
@@ -66,18 +66,6 @@ def test_search_sample_picks_correct_hash_endpoint(requests_mock, module):
     assert result["found"] is True
 
 
-# -- GetQuota -----------------------------------------------------------------
-
-
-def test_get_quota(requests_mock, module):
-    requests_mock.get(f"{BASE_URL}/rest/api_key/quota", json=ok_envelope({"quota_limit": 100, "used_quota": 7}))
-    action = GetQuota(module=module)
-
-    result = action.run({})
-
-    assert result == {"quota_limit": 100, "used_quota": 7}
-
-
 # -- GetSample ----------------------------------------------------------------
 
 
@@ -114,3 +102,27 @@ def test_get_report_pdf_writes_pdf_to_data_path(requests_mock, module, data_stor
     written = Path(data_storage) / result["file_path"]
     assert written.read_bytes() == b"%PDF-fake-report"
     assert result["file_path"].endswith(".pdf")
+
+
+# -- GetScreenshots -------------------------------------------------------------
+
+
+def test_get_screenshots_writes_zip_to_data_path(requests_mock, module, data_storage):
+    requests_mock.get(f"{BASE_URL}/rest/analysis/99/archive/screenshots", content=b"fake-screenshots-zip-bytes")
+    action = GetScreenshots(module=module)
+
+    result = action.run({"analysis_id": 99})
+
+    written = Path(data_storage) / result["file_path"]
+    assert written.read_bytes() == b"fake-screenshots-zip-bytes"
+    assert result["file_path"].startswith("vmray-screenshots-99-")
+    assert result["file_path"].endswith(".zip")
+
+
+def test_get_screenshots_passes_encryption_password(requests_mock, module, data_storage):
+    m = requests_mock.get(f"{BASE_URL}/rest/analysis/99/archive/screenshots", content=b"x")
+    action = GetScreenshots(module=module)
+
+    action.run({"analysis_id": 99, "encryption_password": "custom-pw"})
+
+    assert m.last_request.qs == {"encryption_password": ["custom-pw"]}

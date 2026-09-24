@@ -26,6 +26,7 @@ from vmray_modules.base import VMRayAction
 from vmray_modules.client import VMRayClient
 from vmray_modules.models import (
     AnalysisDetails,
+    AnalysisRun,
     GetAnalysisDetailsArguments,
     IOCSet,
     MitreAttackTechnique,
@@ -82,6 +83,9 @@ def _merge(details: AnalysisDetails, results: dict[str, Any]) -> None:
         # the base object's own list is preferred and already on `details`.
         details.sample_child_relations = [SampleChildRelation.model_validate(r) for r in results["relations"]]
 
+    if "analyses" in results:
+        details.sample_analyses = [AnalysisRun.model_validate(a) for a in results["analyses"]]
+
 
 def fetch_analysis_details(
     client: VMRayClient,
@@ -90,6 +94,9 @@ def fetch_analysis_details(
     include_iocs: bool = True,
     include_mitre_attack: bool = True,
     include_recursive: bool = False,
+    include_analyses: bool = False,
+    ioc_severity_filter: str | None = None,
+    analysis_verdict_filter: list[str] | None = None,
 ) -> AnalysisDetails:
     base = client.get_sample(sample_id)
     details = AnalysisDetails.model_validate(base)
@@ -98,18 +105,26 @@ def fetch_analysis_details(
     if include_vtis:
         tasks["vtis"] = lambda: client.get_sample_vtis(sample_id)
     if include_iocs:
-        tasks["iocs"] = lambda: client.get_sample_iocs(sample_id)
+        tasks["iocs"] = lambda: client.get_sample_iocs(sample_id, ioc_severity=ioc_severity_filter)
     if include_mitre_attack:
         tasks["mitre_attack"] = lambda: client.get_sample_mitre_attack(sample_id)
     if include_recursive:
         tasks["threat_names"] = lambda: client.get_sample_threat_names(sample_id)
         tasks["classifications"] = lambda: client.get_sample_classifications(sample_id)
+    if include_analyses:
+        tasks["analyses"] = lambda: client.get_sample_analyses(sample_id)
     if details.sample_child_relations_truncated:
         tasks["relations"] = lambda: client.get_sample_relations(sample_id)
 
     results, errors = _run_concurrently(tasks)
     _merge(details, results)
     details.errors = errors
+
+    if analysis_verdict_filter:
+        wanted = {v.strip().lower() for v in analysis_verdict_filter if v}
+        details.sample_analyses = [
+            run for run in details.sample_analyses if (run.analysis_verdict or "").lower() in wanted
+        ]
 
     return details
 
@@ -131,4 +146,7 @@ class GetAnalysisDetails(VMRayAction):
             include_iocs=arguments.include_iocs,
             include_mitre_attack=arguments.include_mitre_attack,
             include_recursive=arguments.include_recursive,
+            include_analyses=arguments.include_analyses,
+            ioc_severity_filter=arguments.ioc_severity_filter,
+            analysis_verdict_filter=arguments.analysis_verdict_filter,
         )
