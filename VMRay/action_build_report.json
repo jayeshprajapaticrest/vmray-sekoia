@@ -1,0 +1,206 @@
+{
+  "name": "Build report",
+  "description": "Build the full VMRay report for samples or submissions: analyses, VTIs, MITRE ATT&CK, IOCs, classifications and threat names per sample, including child samples.",
+  "uuid": "a1414b6a-9500-55b8-8a5f-385bc3820501",
+  "docker_parameters": "BuildReport",
+  "arguments": {
+    "properties": {
+      "samples": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Sample objects carrying sample_id \u2014 e.g. the `samples` of Get samples by hash.",
+        "title": "Samples"
+      },
+      "submissions": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Submission objects carrying submission_sample_id \u2014 e.g. the `submissions` of Submit URL sample. Used when `samples` is empty.",
+        "title": "Submissions"
+      },
+      "max_recursion_depth": {
+        "default": 1,
+        "description": "How many levels of child samples get a full report. 0 = only the given samples, 1 = also their direct children. Each level multiplies the API calls.",
+        "title": "Max Recursion Depth",
+        "type": "integer"
+      },
+      "ioc_severity_filter": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Restrict fetched IOCs to this severity server-side ('malicious' or 'suspicious'). Empty = all severities.",
+        "title": "Ioc Severity Filter"
+      },
+      "analysis_verdict_filter": {
+        "description": "Only keep analyses whose analysis_verdict is one of these values. Empty = keep all.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Analysis Verdict Filter",
+        "type": "array"
+      }
+    },
+    "title": "BuildReportArguments",
+    "type": "object"
+  },
+  "results": {
+    "$defs": {
+      "ReportSample": {
+        "additionalProperties": true,
+        "description": "One sample in a report, in the Cortex-Analyzers VMRay analyzer's shape: the full\nGET /sample/{id} object, plus the sub-resources fetched for it under the analyzer's\nkeys, plus its child samples nested the same way. VMRay's own sample fields pass\nthrough untouched (extra: allow).",
+        "properties": {
+          "sample_id": {
+            "title": "Sample Id",
+            "type": "integer"
+          },
+          "sample_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Verdict"
+          },
+          "sample_vti_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Vti Score"
+          },
+          "sample_webif_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Webif Url"
+          },
+          "sample_threat_names": {
+            "description": "Sample + children, merged.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample Threat Names",
+            "type": "array"
+          },
+          "sample_classifications": {
+            "description": "Sample + children, merged.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sample Classifications",
+            "type": "array"
+          },
+          "sample_analyses": {
+            "description": "Analyses of the latest submission (all analyses if none).",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Sample Analyses",
+            "type": "array"
+          },
+          "sample_threat_indicators": {
+            "additionalProperties": true,
+            "description": "GET /sample/{id}/vtis",
+            "title": "Sample Threat Indicators",
+            "type": "object"
+          },
+          "sample_mitre_attack": {
+            "additionalProperties": true,
+            "description": "GET /sample/{id}/mitre_attack",
+            "title": "Sample Mitre Attack",
+            "type": "object"
+          },
+          "sample_iocs": {
+            "additionalProperties": true,
+            "description": "GET /sample/{id}/iocs",
+            "title": "Sample Iocs",
+            "type": "object"
+          },
+          "sample_child_samples": {
+            "description": "Child samples, built the same way, down to max_recursion_depth.",
+            "items": {
+              "$ref": "#/$defs/ReportSample"
+            },
+            "title": "Sample Child Samples",
+            "type": "array"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Sections of this sample that failed to load; the rest is still filled.",
+            "title": "Errors",
+            "type": "object"
+          }
+        },
+        "required": [
+          "sample_id"
+        ],
+        "title": "ReportSample",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "samples": {
+        "items": {
+          "$ref": "#/$defs/ReportSample"
+        },
+        "title": "Samples",
+        "type": "array"
+      },
+      "errors": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Samples that could not be fetched at all, keyed by sample_id.",
+        "title": "Errors",
+        "type": "object"
+      }
+    },
+    "title": "BuildReportResults",
+    "type": "object"
+  }
+}

@@ -12,7 +12,7 @@ object survives past the exception to work.
 Loosely modelled on the Cortex-Analyzers VMRay analyzer's client (structure,
 exception hierarchy, retry-adapter pattern) — adapted, not copied: retry
 budget raised to 5 attempts (this module's documented contract), full
-endpoint coverage added (system_info, reanalyze), and errors are
+endpoint coverage added (system_info), and errors are
 raised as typed exceptions for the caller to catch per-section rather than
 letting one failure abort a whole fan-out.
 
@@ -21,8 +21,6 @@ Platform REST API OpenAPI spec, v2026.2.1 (spikes/specs/vmray-openapi-2026.2.1.j
 in the design repo) — see the design doc's "VMRay API surface" table.
 """
 
-import base64
-import os
 from typing import Any
 
 from requests import Response, sessions
@@ -35,10 +33,6 @@ DEFAULT_USER_AGENT = "Sekoia-VMRay-Module"
 # respect_retry_after_header; 5xx get capped exponential backoff instead.
 _RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 _RETRY_TOTAL = 5
-
-# VMRay's documented default password for the encrypted sample-file ZIP when
-# no encryption_password argument is supplied (GET /sample/{id}/file).
-DEFAULT_SAMPLE_FILE_PASSWORD = "infected"
 
 
 class VMRayClientError(Exception):
@@ -62,10 +56,6 @@ class BadResponseError(VMRayClientError):
 class UnknownHashTypeError(VMRayClientError):
     """A hash string's length matches none of md5 (32), sha1 (40) or
     sha256 (64) hex characters."""
-
-
-class SampleFileNotFoundError(VMRayClientError):
-    """A local file path passed for submission does not exist."""
 
 
 def _hash_type(value: str) -> str:
@@ -101,17 +91,14 @@ class VMRayClient:
     _submission = "/rest/submission/{submission_id}"
     _sample = "/rest/sample/{sample_id}"
     _sample_by_hash = "/rest/sample/{hash_type}/{hash_value}"
-    _sample_file = "/rest/sample/{sample_id}/file"
-    _sample_report = "/rest/sample/{sample_id}/report"
     _sample_vtis = "/rest/sample/{sample_id}/vtis"
     _sample_iocs = "/rest/sample/{sample_id}/iocs"
     _sample_mitre_attack = "/rest/sample/{sample_id}/mitre_attack"
     _sample_threat_names = "/rest/sample/{sample_id}/threat_names"
     _sample_classifications = "/rest/sample/{sample_id}/classifications"
-    _sample_relations = "/rest/sample_relation/sample/{sample_id}"
     _sample_analyses = "/rest/analysis/sample/{sample_id}"
-    _analysis_reanalyze = "/rest/analysis/{analysis_id}/reanalyze"
-    _analysis_archive = "/rest/analysis/{analysis_id}/archive/{filename}"
+    _sample_submissions = "/rest/submission/sample/{sample_id}"
+    _submission_analyses = "/rest/analysis/submission/{submission_id}"
     _continuation = "/rest/continuation/{continuation_id}"
 
     def __init__(
@@ -201,7 +188,7 @@ class VMRayClient:
 
     # -- submission -------------------------------------------------------
 
-    def submit_url(
+    def submit_url_sample(
         self,
         sample_url: str,
         tags: list[str] | None = None,
@@ -220,44 +207,15 @@ class VMRayClient:
         )
         return self._check_response(self.session.post(self._url(self._submit), data=params))
 
-    def submit_file(
-        self,
-        file_path: str,
-        file_name: str,
-        tags: list[str] | None = None,
-        reanalyze: bool = False,
-        analysis_caching: bool = True,
-        **extra_params: Any,
-    ) -> dict[str, Any]:
-        if not (file_path and os.path.isfile(file_path)):
-            raise SampleFileNotFoundError(f"Sample file not found at '{file_path}'.")
-        params = _drop_none(
-            {
-                "sample_filename_b64enc": base64.b64encode(file_name.encode("utf-8")).decode("utf-8"),
-                "reanalyze": reanalyze,
-                "analysis_caching": analysis_caching,
-                "tags": ",".join(tags) if tags else None,
-                **extra_params,
-            }
-        )
-        with open(file_path, mode="rb") as fh:
-            return self._check_response(
-                self.session.post(self._url(self._submit), data=params, files={"sample_file": fh})
-            )
-
-    def get_submission(self, submission_id: int) -> dict[str, Any]:
+    def update_submission(self, submission_id: int) -> dict[str, Any]:
         return self._check_response(self.session.get(self._url(self._submission.format(submission_id=submission_id))))
-
-    def reanalyze(self, analysis_id: int) -> dict[str, Any]:
-        url = self._url(self._analysis_reanalyze.format(analysis_id=analysis_id))
-        return self._check_response(self.session.post(url))
 
     # -- sample -------------------------------------------------------------
 
     def get_sample(self, sample_id: int) -> dict[str, Any]:
         return self._check_response(self.session.get(self._url(self._sample.format(sample_id=sample_id))))
 
-    def get_sample_by_hash(self, sample_hash: str) -> list[dict[str, Any]]:
+    def get_samples_by_hash(self, sample_hash: str) -> list[dict[str, Any]]:
         """Zero-quota lookup. Returns [] if VMRay has never analysed this hash."""
         return self._check_response(
             self.session.get(
@@ -265,11 +223,11 @@ class VMRayClient:
             )
         )
 
-    def get_sample_vtis(self, sample_id: int) -> dict[str, Any]:
+    def get_sample_threat_indicators(self, sample_id: int) -> dict[str, Any]:
         return self._check_response(self.session.get(self._url(self._sample_vtis.format(sample_id=sample_id))))
 
-    def get_sample_iocs(self, sample_id: int, ioc_severity: str | None = None) -> dict[str, Any]:
-        params = _drop_none({"ioc_severity": ioc_severity})
+    def get_sample_iocs(self, sample_id: int, severity: str | None = None) -> dict[str, Any]:
+        params = _drop_none({"ioc_severity": severity})
         return self._check_response(
             self.session.get(self._url(self._sample_iocs.format(sample_id=sample_id)), params=params)
         )
@@ -277,55 +235,49 @@ class VMRayClient:
     def get_sample_mitre_attack(self, sample_id: int) -> dict[str, Any]:
         return self._check_response(self.session.get(self._url(self._sample_mitre_attack.format(sample_id=sample_id))))
 
-    def get_sample_threat_names(self, sample_id: int) -> dict[str, Any]:
-        """Recursive (children) threat names — 2026.2+ only. Distinct from
-        the base sample object's own `sample_threat_names` field."""
-        return self._check_response(self.session.get(self._url(self._sample_threat_names.format(sample_id=sample_id))))
+    def get_sample_threat_names(self, sample_id: int) -> list[str]:
+        """Unique threat names of the sample and its recursive children (children: 2026.2+ only)."""
+        data = self._check_response(self.session.get(self._url(self._sample_threat_names.format(sample_id=sample_id))))
+        entries = data.get("sample_threat_names", []) + data.get("children_threat_names", [])
+        return sorted({e["threat_name"] for e in entries if e.get("threat_name")})
 
-    def get_sample_classifications(self, sample_id: int) -> dict[str, Any]:
-        """Recursive (children) classifications — 2026.2+ only. Distinct from
-        the base sample object's own `sample_classifications` field."""
-        return self._check_response(
+    def get_sample_classifications(self, sample_id: int) -> list[str]:
+        """Unique classifications of the sample and its recursive children (children: 2026.2+ only)."""
+        data = self._check_response(
             self.session.get(self._url(self._sample_classifications.format(sample_id=sample_id)))
         )
+        entries = data.get("sample_classifications", []) + data.get("children_classifications", [])
+        return sorted({e["classification_name"] for e in entries if e.get("classification_name")})
 
-    def get_sample_relations(self, sample_id: int) -> list[dict[str, Any]]:
-        """Fallback only — the base sample object's `sample_child_relations`
-        is preferred and only truncated for very large families."""
-        return self._check_response(self.session.get(self._url(self._sample_relations.format(sample_id=sample_id))))
-
-    def get_sample_analyses(self, sample_id: int) -> list[dict[str, Any]]:
-        """Per-VM-profile analysis runs for a sample (one sample can carry
-        several analyses — different sandbox profiles/platforms). Each item
-        carries its own `analysis_verdict`/`analysis_severity`/`analysis_vti_score`,
-        distinct from the aggregate on the base sample object."""
-        return self._check_response(self.session.get(self._url(self._sample_analyses.format(sample_id=sample_id))))
-
-    def get_analysis_archive(
-        self, analysis_id: int, filename: str = "screenshots", encryption_password: str | None = None
-    ) -> bytes:
-        """Download a file (or filtered archive) from an analysis's archive.
-        `filename="screenshots"` returns a ZIP of every screenshot for that
-        analysis run — the documented shortcut (vs. listing individual
-        screenshot paths first). May be password-protected depending on the
-        VMRay user's settings, hence `encryption_password`."""
-        params = _drop_none({"encryption_password": encryption_password})
-        res = self.session.get(
-            self._url(self._analysis_archive.format(analysis_id=analysis_id, filename=filename)), params=params
+    def get_sample_latest_submission(self, sample_id: int) -> dict[str, Any] | None:
+        submissions = self._check_response(
+            self.session.get(self._url(self._sample_submissions.format(sample_id=sample_id)))
         )
-        self._raise_for_status(res)
-        return res.content
+        if not submissions:
+            return None
+        return max(submissions, key=lambda submission: submission.get("submission_created", ""))
 
-    def get_sample_file(self, sample_id: int, encryption_password: str | None = None) -> bytes:
-        """Returns the sample wrapped in an encrypted ZIP — never raw bytes.
-        VMRay encrypts with `DEFAULT_SAMPLE_FILE_PASSWORD` ("infected") unless
-        `encryption_password` is given."""
-        params = _drop_none({"encryption_password": encryption_password})
-        res = self.session.get(self._url(self._sample_file.format(sample_id=sample_id)), params=params)
-        self._raise_for_status(res)
-        return res.content
+    def get_sample_analyses(self, sample_id: int, verdicts: list[str] | None = None) -> list[dict[str, Any]]:
+        """Analyses of the sample's LATEST submission — the run its current verdict
+        comes from — falling back to every analysis of the sample if it has no
+        submission. One sample can carry several analyses (different VM profiles)."""
+        latest_submission = self.get_sample_latest_submission(sample_id)
+        if latest_submission:
+            return self.get_submission_analyses(latest_submission["submission_id"], verdicts=verdicts)
+        analyses = self._check_response(self.session.get(self._url(self._sample_analyses.format(sample_id=sample_id))))
+        return self._filter_analyses_by_verdict(analyses, verdicts)
 
-    def get_sample_report(self, sample_id: int) -> bytes:
-        res = self.session.get(self._url(self._sample_report.format(sample_id=sample_id)))
-        self._raise_for_status(res)
-        return res.content
+    def get_submission_analyses(self, submission_id: int, verdicts: list[str] | None = None) -> list[dict[str, Any]]:
+        analyses = self._check_response(
+            self.session.get(self._url(self._submission_analyses.format(submission_id=submission_id)))
+        )
+        return self._filter_analyses_by_verdict(analyses, verdicts)
+
+    @staticmethod
+    def _filter_analyses_by_verdict(
+        analyses: list[dict[str, Any]], verdicts: list[str] | None
+    ) -> list[dict[str, Any]]:
+        wanted = {v.strip().lower() for v in verdicts or [] if v}
+        if not wanted:
+            return analyses
+        return [a for a in analyses if (a.get("analysis_verdict") or "").lower() in wanted]

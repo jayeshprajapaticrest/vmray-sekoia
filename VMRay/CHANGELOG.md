@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 2026-09-25 - 2.0.0
+
+### Added
+
+- `GetSamplesByHash` — look up a list of SHA256/SHA1/MD5 hashes and return every matching sample, no quota spent.
+- `SubmitUrlSample` — submit a URL and wait until every resulting submission finishes.
+- `BuildReport` — build the full report for samples or submissions: analyses of the latest submission, VTIs, IOCs, MITRE ATT&CK, classifications, threat names and child samples.
+- `RenderReport` — pure transform: a report to a markdown comment.
+- `ReportToIndicators` — pure transform: a report to Sekoia's flat, typed indicator list, from malicious samples only by default.
+- Submission options `max_recursive_samples` and `analysis_timeout`.
+- Playbook `VMRay_Manual_Report` — manual trigger, hash and URL branches in parallel.
+
+### Removed
+
+- `SearchSample`, `SubmitUrl`, `SubmitFile`, `SubmitAndWait`, `GetAnalysisDetails`, `SubmitAndEnrich`, `RenderSummary` and `IocsToIndicators` — replaced by the actions above.
+- `GetSample`, `GetReportPdf` and `GetScreenshots` — Sekoia cannot attach files to an alert or case.
+- Playbooks `VMRay_Automatic_Enrichment`, `VMRay_Manual_Enrichment` and `VMRay_Manual_Detonation`.
+
+### Fixed
+
+- MITRE ATT&CK techniques and VTI classifications and scores are read from the field names the VMRay API actually returns.
+
 ## 2026-09-24 - 1.1.0
 
 ### Removed

@@ -1,0 +1,87 @@
+{
+  "name": "Report to indicator list",
+  "description": "Convert a Build report result into the flat, typed indicator list Sekoia's add_ioc_to_ioc_collection expects \u2014 from malicious samples only by default, child samples included.",
+  "uuid": "90756fcf-55f7-515a-ab59-ee434b08ad21",
+  "docker_parameters": "ReportToIndicators",
+  "arguments": {
+    "properties": {
+      "report": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "A Build report result ({samples, errors}), given inline.",
+        "title": "Report"
+      },
+      "report_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Path (on data_path) to a Build report result saved as JSON.",
+        "title": "Report Path"
+      },
+      "verdicts": {
+        "description": "Only samples whose sample_verdict is one of these contribute indicators \u2014 child samples are judged on their own verdict. Empty = every sample.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Verdicts",
+        "type": "array"
+      },
+      "include_child_samples": {
+        "default": true,
+        "description": "Also take IOCs from child samples, and add each child sample's own SHA256.",
+        "title": "Include Child Samples",
+        "type": "boolean"
+      }
+    },
+    "title": "ReportToIndicatorsArguments",
+    "type": "object"
+  },
+  "results": {
+    "$defs": {
+      "Indicator": {
+        "description": "One entry matching add_ioc_to_ioc_collection's expected shape.",
+        "properties": {
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "type"
+        ],
+        "title": "Indicator",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "indicators": {
+        "items": {
+          "$ref": "#/$defs/Indicator"
+        },
+        "title": "Indicators",
+        "type": "array"
+      }
+    },
+    "title": "ReportToIndicatorsResults",
+    "type": "object"
+  }
+}

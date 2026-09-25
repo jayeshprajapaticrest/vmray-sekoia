@@ -1,0 +1,354 @@
+{
+  "name": "Submit URL sample",
+  "description": "Submit a URL to VMRay, wait until every resulting submission has finished, and return them.",
+  "uuid": "c53a0834-7ea3-58c9-ac39-5c504c78e1f2",
+  "docker_parameters": "SubmitUrlSample",
+  "arguments": {
+    "properties": {
+      "enable_reputation": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Run Reputation Analysis on the sample and its artifacts (hashes and URLs only are sent to third-party services, never the file itself).",
+        "title": "Enable Reputation"
+      },
+      "enable_whois": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Query domains seen during analysis against an external WHOIS service.",
+        "title": "Enable Whois"
+      },
+      "analyzer_mode": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Analysis types to run: 'reputation', 'reputation_static', 'reputation_static_dynamic', 'static_dynamic' or 'static'.",
+        "title": "Analyzer Mode"
+      },
+      "known_malicious": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Let Triage pre-filter known malicious samples (reputation + static).",
+        "title": "Known Malicious"
+      },
+      "known_benign": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Let Triage pre-filter known benign samples (reputation + static).",
+        "title": "Known Benign"
+      },
+      "max_jobs": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Cap on jobs Jobrules may create for this submission \u2014 bounds quota spend.",
+        "title": "Max Jobs"
+      },
+      "archive_action": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "How a submitted archive is handled: 'sample', 'compound_sample' or 'separate_samples'.",
+        "title": "Archive Action"
+      },
+      "archive_password": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Password of a submitted password-protected archive, if not a common one.",
+        "title": "Archive Password"
+      },
+      "shareable": {
+        "default": false,
+        "description": "Share the sample's hash with VirusTotal. Always sent; off unless explicitly enabled.",
+        "title": "Shareable",
+        "type": "boolean"
+      },
+      "net_scheme_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Network scheme for the analysis VM (e.g. 'Isolated'), sent via user_config.",
+        "title": "Net Scheme Name"
+      },
+      "analysis_timeout": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Analysis timeout in seconds on the VMRay side, sent via user_config.",
+        "title": "Analysis Timeout"
+      },
+      "max_recursive_samples": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Maximum number of recursive (child) samples VMRay may create and analyse.",
+        "title": "Max Recursive Samples"
+      },
+      "sample_url": {
+        "description": "URL to submit for detonation.",
+        "title": "Sample Url",
+        "type": "string"
+      },
+      "tags": {
+        "description": "Tags applied to the VMRay submission, for audit trail on the VMRay side.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Tags",
+        "type": "array"
+      },
+      "reanalyze": {
+        "default": true,
+        "description": "Force a fresh analysis even if VMRay already knows the URL.",
+        "title": "Reanalyze",
+        "type": "boolean"
+      },
+      "query_retry_wait": {
+        "default": 10,
+        "description": "Seconds to wait between polls of the submission status.",
+        "title": "Query Retry Wait",
+        "type": "number"
+      },
+      "timeout": {
+        "default": 1800,
+        "description": "Maximum time (seconds) to wait for every submission to finish.",
+        "title": "Timeout",
+        "type": "number"
+      }
+    },
+    "required": [
+      "sample_url"
+    ],
+    "title": "SubmitUrlSampleArguments",
+    "type": "object"
+  },
+  "results": {
+    "$defs": {
+      "Submission": {
+        "additionalProperties": true,
+        "description": "One submission object, as GET /submission/{id} returns it once finished.",
+        "properties": {
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "submission_sample_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Sample Id"
+          },
+          "submission_finished": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Finished"
+          },
+          "submission_has_errors": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Has Errors"
+          },
+          "submission_verdict": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Verdict"
+          },
+          "submission_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Score"
+          },
+          "submission_original_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Original Url"
+          },
+          "submission_consumed_quota": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Consumed Quota"
+          },
+          "submission_webif_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Submission Webif Url"
+          }
+        },
+        "required": [
+          "submission_id"
+        ],
+        "title": "Submission",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "submissions": {
+        "description": "Finished submissions.",
+        "items": {
+          "$ref": "#/$defs/Submission"
+        },
+        "title": "Submissions",
+        "type": "array"
+      },
+      "sample_ids": {
+        "description": "Distinct sample_ids of the finished submissions \u2014 input for the report.",
+        "items": {
+          "type": "integer"
+        },
+        "title": "Sample Ids",
+        "type": "array"
+      },
+      "pending_submission_ids": {
+        "description": "Submissions still running when the wait timed out.",
+        "items": {
+          "type": "integer"
+        },
+        "title": "Pending Submission Ids",
+        "type": "array"
+      },
+      "timed_out": {
+        "default": false,
+        "title": "Timed Out",
+        "type": "boolean"
+      },
+      "errors": {
+        "description": "Errors VMRay returned on submit.",
+        "items": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "title": "Errors",
+        "type": "array"
+      }
+    },
+    "title": "SubmitUrlSampleResults",
+    "type": "object"
+  }
+}

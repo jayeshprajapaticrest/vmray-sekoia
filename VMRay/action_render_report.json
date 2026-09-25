@@ -1,0 +1,53 @@
+{
+  "name": "Render report",
+  "description": "Render a Build report result \u2014 every sample with its VTIs, IOCs, MITRE ATT&CK, analyses and child samples \u2014 into one markdown comment.",
+  "uuid": "50ada8d7-00d0-52fd-850a-9e72765673c4",
+  "docker_parameters": "RenderReport",
+  "arguments": {
+    "properties": {
+      "report": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "A Build report result ({samples, errors}), given inline.",
+        "title": "Report"
+      },
+      "report_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Path (on data_path) to a Build report result saved as JSON.",
+        "title": "Report Path"
+      }
+    },
+    "title": "RenderReportArguments",
+    "type": "object"
+  },
+  "results": {
+    "properties": {
+      "content": {
+        "description": "Markdown, ready for post-alerts/{uuid}/comments.",
+        "title": "Content",
+        "type": "string"
+      }
+    },
+    "required": [
+      "content"
+    ],
+    "title": "RenderReportResults",
+    "type": "object"
+  }
+}

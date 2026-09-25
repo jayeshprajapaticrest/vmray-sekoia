@@ -1,0 +1,434 @@
+{
+  "name": "VMRay: Report on demand (hash lookup + URL detonation)",
+  "uuid": "b4d09391-cd5b-4ae4-8601-a387786b8051",
+  "tags": [
+    "Alerts",
+    "Enrichment",
+    "VMRay"
+  ],
+  "nodes": {
+    "0": {
+      "name": "Manual Trigger",
+      "type": "trigger",
+      "outputs": {
+        "default": [
+          "2"
+        ]
+      },
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a",
+      "trigger_uuid": "fc26eb9f-b272-4c15-b3bf-ace397c0dc57"
+    },
+    "2": {
+      "name": "Get Alert",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "3"
+        ]
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "stix": false
+      },
+      "action_uuid": "8d189665-5401-4098-8d60-944de9a6199a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "3": {
+      "name": "Get Events",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "4"
+        ]
+      },
+      "arguments": {
+        "query": "alert_short_ids: \"{{ node.2['short_id'] }}\"",
+        "earliest_time": "{{ node.2['first_seen_at'] }}",
+        "latest_time": "{{ node.2['last_seen_at'] }}"
+      },
+      "action_uuid": "af0b4355-a428-43d6-991c-d5ff878e17d5",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "4": {
+      "name": "Extract file hashes",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "5"
+        ]
+      },
+      "arguments": {
+        "file": "{{ node.3['events'] }}",
+        "to_file": false,
+        "jsonpath": "$..['file.hash.sha256','file.hash.sha1','file.hash.md5','process.hash.sha256','process.hash.sha1','process.hash.md5']",
+        "return_list": true
+      },
+      "action_uuid": "ecedfa52-7033-4ea8-9c3b-93ad34295f87",
+      "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
+    },
+    "5": {
+      "name": "Extract URLs (url.full)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "6"
+        ]
+      },
+      "arguments": {
+        "file": "{{ node.3['events'] }}",
+        "to_file": false,
+        "jsonpath": "$[?(@['url.full'] =~ '(?i)^https?://')]['url.full']",
+        "return_list": true
+      },
+      "action_uuid": "ecedfa52-7033-4ea8-9c3b-93ad34295f87",
+      "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
+    },
+    "6": {
+      "name": "Extract URLs (url.original)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "7",
+          "8",
+          "16"
+        ]
+      },
+      "arguments": {
+        "file": "{{ node.3['events'] }}",
+        "to_file": false,
+        "jsonpath": "$[?(@['url.original'] =~ '(?i)^https?://')]['url.original']",
+        "return_list": true
+      },
+      "action_uuid": "ecedfa52-7033-4ea8-9c3b-93ad34295f87",
+      "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
+    },
+    "7": {
+      "name": "Nothing to enrich?",
+      "type": "operator",
+      "subtype": "condition",
+      "cases": [
+        {
+          "left": "{{ (node.4['output'] + node.5['output'] + node.6['output']) | length }}",
+          "name": "Nothing",
+          "right": "{{ 0 }}",
+          "comparison": "==",
+          "description": "No hash and no http(s) URL at all — the hash and URL branches both stop silently, so say so once"
+        }
+      ],
+      "outputs": {
+        "Nothing": [
+          "25"
+        ],
+        "else": []
+      }
+    },
+    "8": {
+      "name": "Hash found?",
+      "type": "operator",
+      "subtype": "condition",
+      "cases": [
+        {
+          "left": "{{ node.4['output'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "At least one file/process hash in the events"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "9"
+        ],
+        "else": []
+      }
+    },
+    "9": {
+      "name": "VMRay: Get samples by hash",
+      "type": "action",
+      "outputs": {
+        "found": [
+          "10"
+        ],
+        "not_found": [
+          "24"
+        ]
+      },
+      "arguments": {
+        "hashes": "{{ node.4['output'] }}"
+      },
+      "action_uuid": "aaff4dee-bfd6-5958-9b15-0dc4bc8d5abb",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "10": {
+      "name": "VMRay: Build report (hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "11"
+        ]
+      },
+      "arguments": {
+        "samples": "{{ node.9['samples'] }}"
+      },
+      "action_uuid": "a1414b6a-9500-55b8-8a5f-385bc3820501",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "11": {
+      "name": "VMRay: Render report (hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "12"
+        ]
+      },
+      "arguments": {
+        "report": "{{ node.10 }}"
+      },
+      "action_uuid": "50ada8d7-00d0-52fd-850a-9e72765673c4",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "12": {
+      "name": "Comment Alert (hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "13"
+        ]
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "{{ node.11['content'] }}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "13": {
+      "name": "VMRay: Report to indicator list (hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "14"
+        ]
+      },
+      "arguments": {
+        "report": "{{ node.10 }}"
+      },
+      "action_uuid": "90756fcf-55f7-515a-ab59-ee434b08ad21",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "14": {
+      "name": "Hashes to push? (hash)",
+      "type": "operator",
+      "subtype": "condition",
+      "cases": [
+        {
+          "left": "{{ node.13['indicators'] | selectattr('type', 'equalto', 'hash') | list | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "Only malicious samples yield indicators (ReportToIndicators default) — skip the push when there are none"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "15"
+        ],
+        "else": []
+      }
+    },
+    "15": {
+      "name": "Add hashes to IOC Collection (hash)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "arguments": {
+        "indicators": "{{ node.13['indicators'] | selectattr('type', 'equalto', 'hash') | map(attribute='value') | list }}",
+        "indicator_type": "hash",
+        "ioc_collection_id": "REPLACE_WITH_YOUR_VMRAY_IOC_COLLECTION_ID",
+        "valid_for": 30
+      },
+      "action_uuid": "0acabc04-43b4-4564-b9b2-08b80e0e1ecf",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "16": {
+      "name": "URL found?",
+      "type": "operator",
+      "subtype": "condition",
+      "cases": [
+        {
+          "left": "{{ (node.5['output'] + node.6['output']) | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "At least one http(s) URL in url.full / url.original"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "17"
+        ],
+        "else": []
+      }
+    },
+    "17": {
+      "name": "VMRay: Submit URL sample",
+      "type": "action",
+      "outputs": {
+        "completed": [
+          "18"
+        ],
+        "timed_out": [
+          "26"
+        ],
+        "submission_failed": [
+          "26"
+        ]
+      },
+      "arguments": {
+        "sample_url": "{{ (node.5['output'] + node.6['output'])[0] }}",
+        "reanalyze": true
+      },
+      "action_uuid": "c53a0834-7ea3-58c9-ac39-5c504c78e1f2",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "18": {
+      "name": "VMRay: Build report (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "19"
+        ]
+      },
+      "arguments": {
+        "submissions": "{{ node.17['submissions'] }}"
+      },
+      "action_uuid": "a1414b6a-9500-55b8-8a5f-385bc3820501",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "19": {
+      "name": "VMRay: Render report (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "20"
+        ]
+      },
+      "arguments": {
+        "report": "{{ node.18 }}"
+      },
+      "action_uuid": "50ada8d7-00d0-52fd-850a-9e72765673c4",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "20": {
+      "name": "Comment Alert (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "21"
+        ]
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "{{ node.19['content'] }}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "21": {
+      "name": "VMRay: Report to indicator list (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "22"
+        ]
+      },
+      "arguments": {
+        "report": "{{ node.18 }}"
+      },
+      "action_uuid": "90756fcf-55f7-515a-ab59-ee434b08ad21",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "22": {
+      "name": "Hashes to push? (URL)",
+      "type": "operator",
+      "subtype": "condition",
+      "cases": [
+        {
+          "left": "{{ node.21['indicators'] | selectattr('type', 'equalto', 'hash') | list | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "Only malicious samples yield indicators (ReportToIndicators default) — skip the push when there are none"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "23"
+        ],
+        "else": []
+      }
+    },
+    "23": {
+      "name": "Add hashes to IOC Collection (URL)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "arguments": {
+        "indicators": "{{ node.21['indicators'] | selectattr('type', 'equalto', 'hash') | map(attribute='value') | list }}",
+        "indicator_type": "hash",
+        "ioc_collection_id": "REPLACE_WITH_YOUR_VMRAY_IOC_COLLECTION_ID",
+        "valid_for": 30
+      },
+      "action_uuid": "0acabc04-43b4-4564-b9b2-08b80e0e1ecf",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "24": {
+      "name": "Comment Alert (hashes unknown)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "VMRay has never analysed any of the {{ node.4['output'] | unique | list | length }} file hash(es) in this alert's events — no quota spent."
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "25": {
+      "name": "Comment Alert (nothing to enrich)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "No VMRay enrichment: this alert's events carry no file hash and no http(s) URL. Fields checked: file.hash.sha256/sha1/md5, process.hash.sha256/sha1/md5, url.full, url.original."
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "26": {
+      "name": "Comment Alert (detonation incomplete)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "VMRay detonation of {{ (node.5['output'] + node.6['output'])[0] }} did not return a result.{% if node.17['timed_out'] %} Timed out waiting — submission(s) {{ node.17['pending_submission_ids'] | join(', ') }} may still finish on VMRay.{% endif %}{% if node.17['errors'] %} Submission errors: {{ node.17['errors'] }}{% endif %}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    }
+  },
+  "workspace": "Operation Center",
+  "description": "Run by an analyst on a single alert. Gets the alert and its events, extracts file hashes (file.hash.* / process.hash.*, sha256/sha1/md5) and http(s) URLs (url.full, url.original), then runs two branches in parallel. Hash branch: looks up every hash in VMRay's existing analyses (no quota) and builds the full report for each sample found. URL branch: detonates the first URL (consumes quota, waits up to 30 min) and builds its report. Each branch posts its own comment and pushes hashes from malicious samples (child samples included) to an IOC collection. Before use: replace ioc_collection_id on both 'Add hashes to IOC Collection' nodes."
+}
