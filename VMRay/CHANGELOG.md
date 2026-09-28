@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 2026-09-28 - 2.1.1
+
+### Changed
+
+- `RenderReport` — child samples are listed in a table only; their detail sections are no longer rendered in the comment.
+
 ## 2026-09-28 - 2.1.0
 
 ### Changed

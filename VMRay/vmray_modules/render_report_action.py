@@ -3,8 +3,8 @@
 Laid out like the Cortex-Analyzers TheHive template (VMRay_4_1/long.html), section
 for section: Overview, Detections, IOC Summary, VMRay Threat Identifiers, MITRE
 ATT&CK, Indicators of Compromise, Analyses, Child Samples. Screenshots are left
-out — Sekoia cannot show them. A comment has no click-to-expand, so child sample
-details are rendered in full below the child-sample table instead of on demand.
+out — Sekoia cannot show them. Child samples are listed in one table (verdict,
+name, type, children, report link); their own details stay in the VMRay report.
 
 Field names follow the VMRay OpenAPI spec (v2026.2.1) and the template: VTIs
 carry `score`/`category`/`operation`/`classifications`, MITRE techniques
@@ -21,7 +21,6 @@ from vmray_modules.base import VMRayAction
 from vmray_modules.report_models import RenderReportArguments, RenderReportResults
 
 _MAX_ROWS = 20  # per table (and per IOC type) — keeps a comment readable; the report link has the rest
-_MAX_CHILD_DETAILS = 5  # children rendered in full; the child table still lists up to _MAX_ROWS
 
 # (key under sample_iocs.iocs, value key, label) — the template's IOC order and fields
 _IOC_TYPES = (
@@ -226,14 +225,6 @@ def _render_sample(sample: dict[str, Any]) -> list[str]:
             f"Child Samples ({len(children)})",
             _table(["Verdict", "Sample", "Type", "Children", "Report"], _child_rows(children)),
         )
-        for child in children[:_MAX_CHILD_DETAILS]:
-            lines += ["", f"### Child sample: {_code(_sample_name(child))}"]
-            lines += _render_sample(child)
-        if len(children) > _MAX_CHILD_DETAILS:
-            lines += [
-                "",
-                f"_Details of {len(children) - _MAX_CHILD_DETAILS} more child sample(s) are in the VMRay report._",
-            ]
     elif sample.get("sample_child_sample_ids"):
         count = len(sample["sample_child_sample_ids"])
         lines += _section(f"Child Samples ({count})", ["_Not expanded — see the VMRay report._"])

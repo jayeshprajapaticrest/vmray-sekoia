@@ -119,15 +119,15 @@ def test_analyses_table_newest_first(content):
     assert content.index("Windows 10 64-bit") < content.index("| static |")
 
 
-def test_child_samples_table_and_details(content):
+def test_child_samples_listed_in_a_table_without_details(content):
     assert "#### Child Samples (1)" in content
     assert (
         "| **MALICIOUS** | `payload.exe` | Windows Exe (x86-32) | 1 | [View](https://eu.cloud.vmray.com/samples/43) |"
         in content
     )
-    assert "### Child sample: `payload.exe`" in content
-    assert "| IP | `203.0.113.9` | **MALICIOUS** |" in content  # child's own IOC table
-    assert "_Not expanded — see the VMRay report._" in content  # grandchild beyond max_recursion_depth
+    assert "### Child sample" not in content  # listed only, no per-child detail sections
+    assert "203.0.113.9" not in content  # the child's own IOCs are not rendered
+    assert content.count("#### Overview") == 1  # only the top-level sample gets full sections
 
 
 def test_partial_data_warning(content):
@@ -167,3 +167,24 @@ def test_action_reads_inline_and_from_data_path(data_storage):
 def test_action_requires_a_report():
     with pytest.raises(MissingActionArgumentError):
         RenderReport().run({})
+
+
+def test_nested_children_are_indented_rows():
+    grandchild = {"sample_id": 44, "sample_verdict": "clean", "sample_filename": "drop.dll"}
+    child = {
+        "sample_id": 43,
+        "sample_verdict": "malicious",
+        "sample_filename": "payload.exe",
+        "sample_child_samples": [grandchild],
+    }
+    content = render_report({"samples": [{"sample_id": 42, "sample_child_samples": [child]}]})
+
+    assert "| **MALICIOUS** | `payload.exe` | — | 1 | — |" in content
+    assert "| **CLEAN** | ↳ `drop.dll` | — | — | — |" in content
+
+
+def test_unbuilt_children_are_counted():
+    content = render_report({"samples": [{"sample_id": 1, "sample_child_sample_ids": [2, 3]}]})
+
+    assert "#### Child Samples (2)" in content
+    assert "_Not expanded — see the VMRay report._" in content
