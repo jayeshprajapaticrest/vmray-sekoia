@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 2026-09-28 - 2.1.0
+
+### Changed
+
+- `RenderReport` — comment laid out like the VMRay TheHive report: overview, detections, IOC summary, threat identifiers, MITRE ATT&CK, IOCs, analyses and child samples, as markdown tables.
+
 ## 2026-09-25 - 2.0.0
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "Render report",
-  "description": "Render a Build report result \u2014 every sample with its VTIs, IOCs, MITRE ATT&CK, analyses and child samples \u2014 into one markdown comment.",
+  "description": "Render a Build report result into one markdown alert comment, laid out like the VMRay TheHive report: overview, detections, IOCs, threat identifiers, MITRE ATT&CK, analyses and child samples.",
   "uuid": "50ada8d7-00d0-52fd-850a-9e72765673c4",
   "docker_parameters": "RenderReport",
   "arguments": {
