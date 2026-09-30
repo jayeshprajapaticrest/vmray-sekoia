@@ -31,6 +31,12 @@
         "default": null,
         "description": "Path (on data_path) of the report file \u2014 Build report's `report_path`.",
         "title": "Report Path"
+      },
+      "max_comment_kb": {
+        "default": 256,
+        "description": "Maximum size (KB) of each screenshot comment. Sekoia rejects playbook action arguments above an undocumented size (SYM216), so screenshots are split across comments that each stay under this.",
+        "title": "Max Comment Kb",
+        "type": "integer"
       }
     },
     "title": "RenderReportArguments",
@@ -39,9 +45,17 @@
   "results": {
     "properties": {
       "content": {
-        "description": "Markdown, ready for post-alerts/{uuid}/comments.",
+        "description": "The report as markdown, without screenshot images \u2014 ready for post-alerts/{uuid}/comments.",
         "title": "Content",
         "type": "string"
+      },
+      "screenshot_comments": {
+        "description": "The screenshots, split into comments of at most max_comment_kb each \u2014 post one comment per item (a Foreach over this list). Empty when the report has no screenshots.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Screenshot Comments",
+        "type": "array"
       }
     },
     "required": [

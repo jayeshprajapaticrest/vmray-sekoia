@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-09-30 - 2.3.0
+
+### Added
+
+- `RenderReport` — `screenshot_comments` result: screenshots split into separate comments, each under `max_comment_kb`.
+
+### Changed
+
+- `RenderReport` — the main comment lists how many screenshots there are instead of embedding them.
+
+### Fixed
+
+- Comment Alert node failing with "Arguments given to the action are too big" (SYM216) when the comment held many screenshots.
+
 ## 2026-09-30 - 2.2.1
 
 ### Changed

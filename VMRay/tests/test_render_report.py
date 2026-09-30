@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from sekoia_automation.exceptions import MissingActionArgumentError
 
-from vmray_modules.render_report_action import RenderReport, render_report
+from vmray_modules.render_report_action import RenderReport, render_report, render_screenshot_comments
 
 CHILD = {
     "sample_id": 43,
@@ -252,39 +252,37 @@ def test_bare_urls_and_emails_in_text_do_not_autolink():
     assert "http:\\/\\/c2.example and www\\.c2.example, mails a\\@c2.example" in content
 
 
-# -- screenshots (long.html section 8) ---------------------------------------------------
+# -- screenshots: pointer in the main comment, images in separate comments (SYM216) ------
 
 SHOT = "iVBORw0KGgo="
 
 
-def with_screenshots(truncated=False, data=SHOT, name="a.png"):
+def with_screenshots(truncated=False, data=SHOT, name="a.png", count=1):
     return {
         "sample_id": 1,
+        "sample_filename": "invoice.pdf",
         "has_screenshots": True,
         "screenshots_truncated": truncated,
         "sample_analyses": [
             {
                 "analysis_analyzer_name": "vmray",
                 "analysis_vm_description": "Windows 10 64-bit",
-                "analysis_screenshots": [{"name": name, "data": data}],
+                "analysis_screenshots": [{"name": name, "data": data}] * count,
             },
             {"analysis_analyzer_name": "static", "analysis_screenshots": []},
         ],
     }
 
 
-def test_screenshots_section_tiles_per_analysis():
-    content = render_report({"samples": [with_screenshots()]})
+def test_main_comment_points_at_screenshots_without_embedding_them():
+    content = render_report({"samples": [with_screenshots(count=3)]})
 
     section = content[content.index("#### SCREENSHOTS") :]
-    assert section.split("\n")[2] == "<details open><summary>Toggle</summary>"
-    assert "**vmray** — Windows 10 64-bit" in section
-    assert f'<img src="data:image/jpeg;base64,{SHOT}" alt="a.png" width="320">' in section
-    assert "**static**" not in section  # analyses without screenshots get no heading
-    assert "excluded from this report" not in section
+    assert "**3 screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s)." in section
+    assert "<img" not in content  # images never go in the main comment
 
 
-def test_screenshots_come_after_analyses_and_before_children():
+def test_screenshots_pointer_comes_after_analyses_and_before_children():
     sample = with_screenshots() | {"sample_child_samples": [{"sample_id": 2}]}
     content = render_report({"samples": [sample]})
 
@@ -297,14 +295,54 @@ def test_truncated_screenshots_warning():
     assert "Some analysis screenshots have been excluded from this report due to size limitations" in content
 
 
-def test_no_screenshots_no_section():
-    assert "SCREENSHOTS" not in render_report({"samples": [{"sample_id": 1}]})
+def test_no_screenshots_no_section_and_no_comments():
+    report = {"samples": [{"sample_id": 1}]}
+
+    assert "SCREENSHOTS" not in render_report(report)
+    assert render_screenshot_comments(report, 256 * 1024) == []
+
+
+def test_screenshot_comment_tiles_labelled_by_sample_and_analysis():
+    comments = render_screenshot_comments({"samples": [with_screenshots()]}, 256 * 1024)
+
+    assert len(comments) == 1
+    assert comments[0].startswith("## VMRay Screenshots (1/1)")
+    assert "`invoice.pdf` · **vmray** — Windows 10 64-bit" in comments[0]
+    assert f'<img src="data:image/jpeg;base64,{SHOT}" alt="a.png" width="320">' in comments[0]
+    assert "**static**" not in comments[0]  # analyses without screenshots get no heading
+
+
+def test_screenshots_split_so_every_comment_fits():
+    data = "A" * 10_000  # ~10 KB tile
+    comments = render_screenshot_comments({"samples": [with_screenshots(data=data, count=7)]}, 32 * 1024)
+
+    assert len(comments) == 3  # 3 + 3 + 1 tiles
+    assert all(len(c.encode()) <= 32 * 1024 for c in comments)
+    assert [c.splitlines()[0] for c in comments] == [f"## VMRay Screenshots ({i}/3)" for i in (1, 2, 3)]
+    assert sum(c.count("<img") for c in comments) == 7  # nothing lost
+    assert all("`invoice.pdf` · **vmray**" in c for c in comments)  # each part keeps its context
+
+
+def test_child_sample_screenshots_are_included():
+    child = with_screenshots(name="c.png") | {"sample_id": 2, "sample_filename": "payload.exe"}
+    report = {"samples": [{"sample_id": 1, "sample_child_samples": [child]}]}
+
+    comments = render_screenshot_comments(report, 256 * 1024)
+
+    assert "`payload.exe` · **vmray**" in comments[0]
 
 
 def test_screenshot_alt_is_escaped_and_non_base64_data_is_dropped():
-    hostile_name = render_report({"samples": [with_screenshots(name='"><img src=x>')]})
-    assert 'alt="&quot;&gt;&lt;img src=x&gt;"' in hostile_name
+    hostile = render_screenshot_comments({"samples": [with_screenshots(name='"><img src=x>')]}, 256 * 1024)
+    assert 'alt="&quot;&gt;&lt;img src=x&gt;"' in hostile[0]
 
-    bad_data = render_report({"samples": [with_screenshots(data='x" onerror="alert(1)')]})
-    assert "onerror" not in bad_data
-    assert "<img" not in bad_data
+    assert render_screenshot_comments({"samples": [with_screenshots(data='x" onerror="alert(1)')]}, 256 * 1024) == []
+
+
+def test_action_returns_main_comment_and_screenshot_comments():
+    result = RenderReport().run(
+        {"report": {"samples": [with_screenshots(data="A" * 10_000, count=4)]}, "max_comment_kb": 32}
+    )
+
+    assert "<img" not in result["content"]
+    assert len(result["screenshot_comments"]) == 2

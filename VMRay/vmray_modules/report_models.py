@@ -19,11 +19,22 @@ class ReportInput(BaseModel):
 
 
 class RenderReportArguments(ReportInput):
-    pass
+    max_comment_kb: int = Field(
+        default=256,
+        description="Maximum size (KB) of each screenshot comment. Sekoia rejects playbook action arguments above "
+        "an undocumented size (SYM216), so screenshots are split across comments that each stay under this.",
+    )
 
 
 class RenderReportResults(BaseModel):
-    content: str = Field(..., description="Markdown, ready for post-alerts/{uuid}/comments.")
+    content: str = Field(
+        ..., description="The report as markdown, without screenshot images — ready for post-alerts/{uuid}/comments."
+    )
+    screenshot_comments: list[str] = Field(
+        default_factory=list,
+        description="The screenshots, split into comments of at most max_comment_kb each — post one comment per item "
+        "(a Foreach over this list). Empty when the report has no screenshots.",
+    )
 
 
 class ReportToIndicatorsArguments(ReportInput):

@@ -6,6 +6,11 @@ markdown with Angular's HTML sanitizer, so the template's visual elements map to
 coloured labels and score badges -> `<font color>`; Toggle/Details buttons ->
 `<details>` (`open` where the template starts expanded); the overview
 definition list -> an HTML table; screenshot tiles -> inline `data:` images.
+
+Screenshots are returned separately (`screenshot_comments`), split into comments
+of at most `max_comment_kb` each: Sekoia rejects playbook action arguments above
+an undocumented size (SYM216), and the Comment Alert action only takes inline
+text, so one comment holding every screenshot fails.
 `style` attributes and `<style>` blocks are stripped by Sekoia, so no CSS.
 
 Every value that can come from the analysed sample (filenames, URLs, IOC values,
@@ -259,30 +264,88 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
     return [*_title("Analyses"), *_toggle(table)]
 
 
+def _tiles(analysis: dict[str, Any]) -> list[str]:
+    return [
+        f'<img src="data:image/jpeg;base64,{shot["data"]}" alt="{_h(shot.get("name") or "screenshot")}" '
+        f'width="{_SCREENSHOT_WIDTH}">'
+        for shot in analysis.get("analysis_screenshots") or []
+        if isinstance(shot.get("data"), str) and _BASE64.fullmatch(shot["data"])
+    ]
+
+
 def _screenshots(sample: dict[str, Any]) -> list[str]:
-    if not (sample.get("has_screenshots") or sample.get("screenshots_truncated")):
+    """The main comment only points at the screenshots: the images themselves go in separate comments
+    (render_screenshot_comments), since all of them together exceed Sekoia's playbook argument limit."""
+    count = sum(len(_tiles(a)) for a in sample.get("sample_analyses") or [])
+    if not (count or sample.get("screenshots_truncated")):
         return []
-    body: list[str] = []
+    body = []
+    if count:
+        body.append(f"**{count} screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s).")
     if sample.get("screenshots_truncated"):
         body += [
+            "",
             "⚠️ _Some analysis screenshots have been excluded from this report due to size limitations. "
             "The complete set of screenshots is available on the VMRay platform._",
-            "",
         ]
-    for analysis in sample.get("sample_analyses") or []:
-        tiles = [
-            f'<img src="data:image/jpeg;base64,{shot["data"]}" alt="{_h(shot.get("name") or "screenshot")}" '
-            f'width="{_SCREENSHOT_WIDTH}">'
-            for shot in analysis.get("analysis_screenshots") or []
-            if isinstance(shot.get("data"), str) and _BASE64.fullmatch(shot["data"])
-        ]
-        if not tiles:
-            continue
-        heading = f"**{_text(analysis.get('analysis_analyzer_name') or 'Analysis')}**"
-        if analysis.get("analysis_vm_description"):
-            heading += f" — {_text(analysis['analysis_vm_description'])}"
-        body += [heading, "", " ".join(tiles), ""]
-    return [*_title("Screenshots"), *_toggle(body)] if body else []
+    return [*_title("Screenshots"), "", *body]
+
+
+def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
+    """(heading, tiles) per analysis with screenshots, for every sample and child sample, in report order."""
+    groups: list[tuple[str, list[str]]] = []
+
+    def walk(sample: dict[str, Any]) -> None:
+        for analysis in sample.get("sample_analyses") or []:
+            tiles = _tiles(analysis)
+            if not tiles:
+                continue
+            heading = (
+                f"{_code(_sample_name(sample))} · **{_text(analysis.get('analysis_analyzer_name') or 'Analysis')}**"
+            )
+            if analysis.get("analysis_vm_description"):
+                heading += f" — {_text(analysis['analysis_vm_description'])}"
+            groups.append((heading, tiles))
+        for child in sample.get("sample_child_samples") or []:
+            walk(child)
+
+    for sample in report.get("samples") or []:
+        walk(sample)
+    return groups
+
+
+_COMMENT_HEADER_RESERVE = 64  # room for the "## VMRay Screenshots (i/N)" line
+
+
+def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[str]:
+    """Pack every screenshot tile, in order, into as few comments as fit under max_bytes each. A tile is
+    never split; one bigger than the limit still gets a comment of its own."""
+    budget = max(max_bytes - _COMMENT_HEADER_RESERVE, 1)
+    chunks: list[list[tuple[str, list[str]]]] = []
+    current: list[tuple[str, list[str]]] = []
+    size = 0
+    for heading, tiles in _screenshot_groups(report):
+        for tile in tiles:
+            opens_group = not current or current[-1][0] != heading
+            cost = len(tile) + 1 + (len(heading) + 4 if opens_group else 0)
+            if current and size + cost > budget:
+                chunks.append(current)
+                current, size = [], 0
+                opens_group, cost = True, len(tile) + 1 + len(heading) + 4
+            if opens_group:
+                current.append((heading, []))
+            current[-1][1].append(tile)
+            size += cost
+    if current:
+        chunks.append(current)
+
+    return [
+        "\n".join(
+            [f"## VMRay Screenshots ({index}/{len(chunks)})"]
+            + [line for heading, tiles in chunk for line in ("", heading, "", " ".join(tiles))]
+        )
+        for index, chunk in enumerate(chunks, start=1)
+    ]
 
 
 def _child_rows(children: list[dict[str, Any]], depth: int = 0) -> list[list[str]]:
@@ -364,4 +427,7 @@ class RenderReport(VMRayAction):
             report = orjson.loads(self.data_path.joinpath(arguments.report_path).read_bytes())
         else:
             raise MissingActionArgumentError("report")
-        return RenderReportResults(content=render_report(report))
+        return RenderReportResults(
+            content=render_report(report),
+            screenshot_comments=render_screenshot_comments(report, arguments.max_comment_kb * 1024),
+        )

@@ -1,6 +1,6 @@
 [project]
 name = "automation-module-vmray"
-version = "2.2.1"
+version = "2.3.0"
 description = "VMRay Platform sandbox integration for Sekoia"
 authors = []
 requires-python = ">=3.11,<4"
