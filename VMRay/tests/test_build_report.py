@@ -2,6 +2,7 @@ import base64
 import io
 import json as jsonlib
 import re
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -17,6 +18,19 @@ def make_action():
     m = VMRayModule()
     m.configuration = VMRayConfiguration(base_url=BASE_URL, api_key="test-key")
     return BuildReport(module=m)
+
+
+@pytest.fixture(autouse=True)
+def storage(data_storage):
+    """BuildReport writes the report to data_path — every test gets a fresh one."""
+    return data_storage
+
+
+def build(arguments):
+    """Run BuildReport and return the report it wrote to data_path."""
+    action = make_action()
+    result = action.run(arguments)
+    return jsonlib.loads(action.data_path.joinpath(result["report_path"]).read_bytes())
 
 
 def ok(data):
@@ -71,7 +85,7 @@ def mock_full_sample(requests_mock, sample_id, children=(), latest_submission=Tr
 def test_builds_full_report_from_samples(requests_mock):
     mock_full_sample(requests_mock, 42)
 
-    result = make_action().run({"samples": [{"sample_id": 42}]})
+    result = build({"samples": [{"sample_id": 42}]})
 
     sample = result["samples"][0]
     assert sample["sample_id"] == 42
@@ -88,7 +102,7 @@ def test_builds_full_report_from_samples(requests_mock):
 def test_analyses_come_from_the_latest_submission(requests_mock):
     mock_full_sample(requests_mock, 42)
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     assert [a["analysis_id"] for a in sample["sample_analyses"]] == [1, 2]  # submission 421, not 420
 
@@ -96,7 +110,7 @@ def test_analyses_come_from_the_latest_submission(requests_mock):
 def test_analyses_fall_back_to_all_when_no_submission(requests_mock):
     mock_full_sample(requests_mock, 42, latest_submission=False)
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     assert [a["analysis_id"] for a in sample["sample_analyses"]] == [9]
 
@@ -104,7 +118,7 @@ def test_analyses_fall_back_to_all_when_no_submission(requests_mock):
 def test_accepts_submissions(requests_mock):
     mock_full_sample(requests_mock, 42)
 
-    result = make_action().run({"submissions": [{"submission_id": 111, "submission_sample_id": 42}]})
+    result = build({"submissions": [{"submission_id": 111, "submission_sample_id": 42}]})
 
     assert [s["sample_id"] for s in result["samples"]] == [42]
 
@@ -113,7 +127,7 @@ def test_samples_take_precedence_over_submissions(requests_mock):
     mock_full_sample(requests_mock, 42)
     # no mocks for sample 43 — using the submissions list would raise NoMockAddress
 
-    result = make_action().run({"samples": [{"sample_id": 42}], "submissions": [{"submission_sample_id": 43}]})
+    result = build({"samples": [{"sample_id": 42}], "submissions": [{"submission_sample_id": 43}]})
 
     assert [s["sample_id"] for s in result["samples"]] == [42]
 
@@ -121,13 +135,13 @@ def test_samples_take_precedence_over_submissions(requests_mock):
 @pytest.mark.parametrize("arguments", [{}, {"samples": [], "submissions": []}])
 def test_requires_samples_or_submissions(arguments):
     with pytest.raises(MissingActionArgumentError):
-        make_action().run(arguments)
+        make_action().run(arguments)  # raises before writing
 
 
 def test_duplicate_ids_build_once(requests_mock):
     mock_full_sample(requests_mock, 42)
 
-    result = make_action().run({"samples": [{"sample_id": 42}, {"sample_id": 42}]})
+    result = build({"samples": [{"sample_id": 42}, {"sample_id": 42}]})
 
     assert len(result["samples"]) == 1
 
@@ -137,7 +151,7 @@ def test_default_depth_builds_direct_children_only(requests_mock):
     mock_full_sample(requests_mock, 43, children=[44])
     # no mocks for 44 — building a grandchild would raise NoMockAddress
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     child = sample["sample_child_samples"][0]
     assert child["sample_id"] == 43
@@ -148,7 +162,7 @@ def test_default_depth_builds_direct_children_only(requests_mock):
 def test_depth_zero_builds_no_children(requests_mock):
     mock_full_sample(requests_mock, 42, children=[43])
 
-    sample = make_action().run({"samples": [{"sample_id": 42}], "max_recursion_depth": 0})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}], "max_recursion_depth": 0})["samples"][0]
 
     assert sample["sample_child_samples"] == []
 
@@ -157,7 +171,7 @@ def test_failing_section_is_recorded_and_the_rest_is_filled(requests_mock):
     mock_full_sample(requests_mock, 42)
     requests_mock.get(f"{BASE_URL}/rest/sample/42/iocs", status_code=500, json={"error_msg": "boom"})
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     assert "sample_iocs" in sample["errors"]
     assert sample["sample_iocs"] == {}
@@ -168,7 +182,7 @@ def test_unfetchable_sample_is_recorded_and_others_still_built(requests_mock):
     requests_mock.get(f"{BASE_URL}/rest/sample/41", status_code=404, json={"error_msg": "unknown sample"})
     mock_full_sample(requests_mock, 42)
 
-    result = make_action().run({"samples": [{"sample_id": 41}, {"sample_id": 42}]})
+    result = build({"samples": [{"sample_id": 41}, {"sample_id": 42}]})
 
     assert "41" in result["errors"]
     assert [s["sample_id"] for s in result["samples"]] == [42]
@@ -178,7 +192,7 @@ def test_filters_are_forwarded(requests_mock):
     mock_full_sample(requests_mock, 42)
     iocs = requests_mock.get(f"{BASE_URL}/rest/sample/42/iocs", json=ok({"iocs": {}}))
 
-    sample = make_action().run(
+    sample = build(
         {"samples": [{"sample_id": 42}], "ioc_severity_filter": "malicious", "analysis_verdict_filter": ["Malicious"]}
     )["samples"][0]
 
@@ -190,7 +204,7 @@ def test_unfetchable_child_is_recorded_on_the_parent(requests_mock):
     mock_full_sample(requests_mock, 42, children=[43])
     requests_mock.get(f"{BASE_URL}/rest/sample/43", status_code=404, json={"error_msg": "gone"})
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     assert "child_sample:43" in sample["errors"]
     assert sample["sample_child_samples"] == []
@@ -240,7 +254,7 @@ def test_screenshots_are_embedded_as_compressed_jpeg_newest_analysis_first(reque
     ]
     mock_screenshot_sample(requests_mock, 42, analyses, {1: {"a.png": png(100, 60)}, 2: {"b.png": png(1600, 900)}})
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     assert sample["has_screenshots"] is True
     assert sample["screenshots_truncated"] is False
@@ -259,7 +273,7 @@ def test_budget_truncates_and_skips_the_rest(requests_mock):
     shots = {f"s{i}.png": png(800, 600, (i * 20, 90, 200)) for i in range(5)}
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1, "analysis_created": "x"}], {1: shots})
 
-    sample = make_action().run({"samples": [{"sample_id": 42}], "screenshot_budget_kb": 12})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}], "screenshot_budget_kb": 12})["samples"][0]
 
     kept = sample["sample_analyses"][0]["analysis_screenshots"]
     assert sample["screenshots_truncated"] is True
@@ -270,7 +284,7 @@ def test_budget_truncates_and_skips_the_rest(requests_mock):
 def test_screenshot_mode_none_fetches_nothing(requests_mock):
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"a.png": png(10, 10)}})
 
-    sample = make_action().run({"samples": [{"sample_id": 42}], "screenshot_mode": "none"})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}], "screenshot_mode": "none"})["samples"][0]
 
     assert archive_calls(requests_mock) == []
     assert sample["has_screenshots"] is False
@@ -280,11 +294,11 @@ def test_parent_only_skips_children_and_all_includes_them(requests_mock):
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"a.png": png(10, 10)}}, children=[43])
     mock_screenshot_sample(requests_mock, 43, [{"analysis_id": 2}], {2: {"c.png": png(10, 10)}})
 
-    parent_only = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    parent_only = build({"samples": [{"sample_id": 42}]})["samples"][0]
     assert parent_only["has_screenshots"] is True
     assert parent_only["sample_child_samples"][0]["has_screenshots"] is False
 
-    everything = make_action().run({"samples": [{"sample_id": 42}], "screenshot_mode": "all"})["samples"][0]
+    everything = build({"samples": [{"sample_id": 42}], "screenshot_mode": "all"})["samples"][0]
     assert everything["sample_child_samples"][0]["has_screenshots"] is True
 
 
@@ -292,7 +306,7 @@ def test_unreadable_screenshot_is_skipped_and_the_rest_kept(requests_mock):
     shots = {"broken.png": b"not an image", "ok.png": png(20, 20)}
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: shots})
 
-    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    sample = build({"samples": [{"sample_id": 42}]})["samples"][0]
 
     assert [s["name"] for s in sample["sample_analyses"][0]["analysis_screenshots"]] == ["ok.png"]
 
@@ -303,8 +317,32 @@ def test_missing_screenshot_summary_never_fails_the_report(requests_mock):
         f"{BASE_URL}/rest/analysis/1/archive/logs/summary.json", status_code=404, json={"error_msg": "x"}
     )
 
-    result = make_action().run({"samples": [{"sample_id": 42}]})
+    result = build({"samples": [{"sample_id": 42}]})
 
     sample = result["samples"][0]
     assert sample["has_screenshots"] is False
     assert sample["errors"] == {}
+
+
+def test_only_a_summary_travels_inline_the_report_is_a_file(requests_mock, storage):
+    mock_full_sample(requests_mock, 42)
+    requests_mock.get(re.compile(rf"{BASE_URL}/rest/analysis/\\d+/archive/.*"), status_code=404, json={})
+
+    result = make_action().run({"samples": [{"sample_id": 42}]})
+
+    assert set(result) == {"report_path", "sample_ids", "errors"}  # no samples/screenshots inline (SYM216)
+    assert result["sample_ids"] == [42]
+    report = jsonlib.loads((Path(storage) / result["report_path"]).read_bytes())
+    assert report["samples"][0]["sample_id"] == 42
+
+
+def test_report_file_feeds_render_report_and_report_to_indicators(requests_mock, storage):
+    from vmray_modules.render_report_action import RenderReport
+    from vmray_modules.report_to_indicators_action import ReportToIndicators
+
+    mock_full_sample(requests_mock, 42)
+    report_path = make_action().run({"samples": [{"sample_id": 42}]})["report_path"]
+
+    assert "## VMRay Report" in RenderReport().run({"report_path": report_path})["content"]
+    indicators = ReportToIndicators().run({"report_path": report_path})["indicators"]
+    assert {"type": "url", "value": "http://evil.example"} in indicators

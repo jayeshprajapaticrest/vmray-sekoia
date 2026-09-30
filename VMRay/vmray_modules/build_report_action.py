@@ -13,6 +13,10 @@ screenshot, compress it to JPEG and embed it as base64 until one report-wide
 size budget runs out. Sekoia has no attachment API, so embedding is the only way
 a screenshot reaches the alert comment.
 
+The report is written to a JSON file on data_path and only its path is returned
+(`report_path`): with screenshots it easily exceeds Sekoia's size limit on action
+arguments (SYM216), so the next nodes must receive it as a file, not inline.
+
 Deliberately left out versus the analyzer: sample-file downloads. Unlike the
 analyzer, one failing call does not abort the report: it lands in that sample's
 `errors` and every other section is still filled.
@@ -21,18 +25,20 @@ analyzer, one failing call does not abort the report: it lands in that sample's
 import base64
 import io
 import json
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
+import orjson
 from PIL import Image, UnidentifiedImageError
 from requests import RequestException
 from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.base import VMRayAction
 from vmray_modules.client import VMRayClient, VMRayClientError
-from vmray_modules.models import BuildReportArguments, BuildReportResults
+from vmray_modules.models import BuildReportArguments, BuildReportResults, Report
 
 _MAX_WORKERS = 4
 
@@ -178,4 +184,10 @@ class BuildReport(VMRayAction):
             build_sample_node(self.client, sample, 0, arguments, budget)
             samples.append(sample)
 
-        return BuildReportResults.model_validate({"samples": samples, "errors": errors})
+        report = Report.model_validate({"samples": samples, "errors": errors})
+        filename = f"vmray-report-{uuid.uuid4()}.json"
+        self.data_path.joinpath(filename).write_bytes(orjson.dumps(report.model_dump(mode="json")))
+
+        return BuildReportResults(
+            report_path=filename, sample_ids=[s.sample_id for s in report.samples], errors=report.errors
+        )

@@ -238,8 +238,25 @@ class BuildReportArguments(BaseModel):
     )
 
 
-class BuildReportResults(BaseModel):
+class Report(BaseModel):
+    """The full report, as written to the file behind BuildReport's `report_path`."""
+
     samples: list[ReportSample] = Field(default_factory=list)
+    errors: dict[str, str] = Field(
+        default_factory=dict, description="Samples that could not be fetched at all, keyed by sample_id."
+    )
+
+
+class BuildReportResults(BaseModel):
+    """Only a summary travels inline. The report itself — screenshots included — can be megabytes, far over
+    Sekoia's limit on action arguments (SYM216), so it is written to data_path and passed on as a file."""
+
+    report_path: str = Field(
+        ...,
+        description="Path (relative to data_path) of the full report JSON — give it to Render report and "
+        "Report to indicator list as `report_path`.",
+    )
+    sample_ids: list[int] = Field(default_factory=list, description="Samples in the report.")
     errors: dict[str, str] = Field(
         default_factory=dict, description="Samples that could not be fetched at all, keyed by sample_id."
     )

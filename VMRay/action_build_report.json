@@ -88,136 +88,19 @@
     "type": "object"
   },
   "results": {
-    "$defs": {
-      "ReportSample": {
-        "additionalProperties": true,
-        "description": "One sample in a report, in the Cortex-Analyzers VMRay analyzer's shape: the full\nGET /sample/{id} object, plus the sub-resources fetched for it under the analyzer's\nkeys, plus its child samples nested the same way. VMRay's own sample fields pass\nthrough untouched (extra: allow).",
-        "properties": {
-          "sample_id": {
-            "title": "Sample Id",
-            "type": "integer"
-          },
-          "sample_verdict": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sample Verdict"
-          },
-          "sample_vti_score": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sample Vti Score"
-          },
-          "sample_webif_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sample Webif Url"
-          },
-          "sample_threat_names": {
-            "description": "Sample + children, merged.",
-            "items": {
-              "type": "string"
-            },
-            "title": "Sample Threat Names",
-            "type": "array"
-          },
-          "sample_classifications": {
-            "description": "Sample + children, merged.",
-            "items": {
-              "type": "string"
-            },
-            "title": "Sample Classifications",
-            "type": "array"
-          },
-          "sample_analyses": {
-            "description": "Analyses of the latest submission (all analyses if none).",
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Sample Analyses",
-            "type": "array"
-          },
-          "sample_threat_indicators": {
-            "additionalProperties": true,
-            "description": "GET /sample/{id}/vtis",
-            "title": "Sample Threat Indicators",
-            "type": "object"
-          },
-          "sample_mitre_attack": {
-            "additionalProperties": true,
-            "description": "GET /sample/{id}/mitre_attack",
-            "title": "Sample Mitre Attack",
-            "type": "object"
-          },
-          "sample_iocs": {
-            "additionalProperties": true,
-            "description": "GET /sample/{id}/iocs",
-            "title": "Sample Iocs",
-            "type": "object"
-          },
-          "sample_child_samples": {
-            "description": "Child samples, built the same way, down to max_recursion_depth.",
-            "items": {
-              "$ref": "#/$defs/ReportSample"
-            },
-            "title": "Sample Child Samples",
-            "type": "array"
-          },
-          "has_screenshots": {
-            "default": false,
-            "description": "Any analysis in sample_analyses carries screenshots.",
-            "title": "Has Screenshots",
-            "type": "boolean"
-          },
-          "screenshots_truncated": {
-            "default": false,
-            "description": "Some screenshots were left out because the report's screenshot budget ran out.",
-            "title": "Screenshots Truncated",
-            "type": "boolean"
-          },
-          "errors": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "Sections of this sample that failed to load; the rest is still filled.",
-            "title": "Errors",
-            "type": "object"
-          }
-        },
-        "required": [
-          "sample_id"
-        ],
-        "title": "ReportSample",
-        "type": "object"
-      }
-    },
+    "description": "Only a summary travels inline. The report itself \u2014 screenshots included \u2014 can be megabytes, far over\nSekoia's limit on action arguments (SYM216), so it is written to data_path and passed on as a file.",
     "properties": {
-      "samples": {
+      "report_path": {
+        "description": "Path (relative to data_path) of the full report JSON \u2014 give it to Render report and Report to indicator list as `report_path`.",
+        "title": "Report Path",
+        "type": "string"
+      },
+      "sample_ids": {
+        "description": "Samples in the report.",
         "items": {
-          "$ref": "#/$defs/ReportSample"
+          "type": "integer"
         },
-        "title": "Samples",
+        "title": "Sample Ids",
         "type": "array"
       },
       "errors": {
@@ -229,6 +112,9 @@
         "type": "object"
       }
     },
+    "required": [
+      "report_path"
+    ],
     "title": "BuildReportResults",
     "type": "object"
   }

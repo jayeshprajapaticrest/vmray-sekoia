@@ -14,7 +14,7 @@ class ReportInput(BaseModel):
         default=None, description="A Build report result ({samples, errors}), given inline."
     )
     report_path: str | None = Field(
-        default=None, description="Path (on data_path) to a Build report result saved as JSON."
+        default=None, description="Path (on data_path) of the report file — Build report's `report_path`."
     )
 
 

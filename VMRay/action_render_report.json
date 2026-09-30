@@ -29,7 +29,7 @@
           }
         ],
         "default": null,
-        "description": "Path (on data_path) to a Build report result saved as JSON.",
+        "description": "Path (on data_path) of the report file \u2014 Build report's `report_path`.",
         "title": "Report Path"
       }
     },
