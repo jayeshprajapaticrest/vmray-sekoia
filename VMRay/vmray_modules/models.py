@@ -14,7 +14,7 @@ strings). A strict Literal would raise on an unseen-but-valid value VMRay adds
 later; a plain str degrades gracefully instead.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 from sekoia_automation.module import Module
@@ -194,6 +194,10 @@ class ReportSample(BaseModel):
     sample_child_samples: list["ReportSample"] = Field(
         default_factory=list, description="Child samples, built the same way, down to max_recursion_depth."
     )
+    has_screenshots: bool = Field(default=False, description="Any analysis in sample_analyses carries screenshots.")
+    screenshots_truncated: bool = Field(
+        default=False, description="Some screenshots were left out because the report's screenshot budget ran out."
+    )
     errors: dict[str, str] = Field(
         default_factory=dict, description="Sections of this sample that failed to load; the rest is still filled."
     )
@@ -221,6 +225,16 @@ class BuildReportArguments(BaseModel):
     analysis_verdict_filter: list[str] = Field(
         default_factory=list,
         description="Only keep analyses whose analysis_verdict is one of these values. Empty = keep all.",
+    )
+    screenshot_mode: Literal["none", "parent_only", "all"] = Field(
+        default="parent_only",
+        description="Which samples get their analyses' screenshots embedded: none, only the given (parent) "
+        "samples, or every sample including children.",
+    )
+    screenshot_budget_kb: int = Field(
+        default=2048,
+        description="Total size (KB, base64) of embedded screenshots across the whole report. Once reached, the "
+        "remaining screenshots are left out and the sample is marked screenshots_truncated.",
     )
 
 

@@ -1,6 +1,6 @@
 {
   "name": "Build report",
-  "description": "Build the full VMRay report for samples or submissions: analyses, VTIs, MITRE ATT&CK, IOCs, classifications and threat names per sample, including child samples.",
+  "description": "Build the full VMRay report for samples or submissions: analyses, VTIs, MITRE ATT&CK, IOCs, classifications, threat names and screenshots per sample, including child samples.",
   "uuid": "a1414b6a-9500-55b8-8a5f-385bc3820501",
   "docker_parameters": "BuildReport",
   "arguments": {
@@ -65,6 +65,23 @@
         },
         "title": "Analysis Verdict Filter",
         "type": "array"
+      },
+      "screenshot_mode": {
+        "default": "parent_only",
+        "description": "Which samples get their analyses' screenshots embedded: none, only the given (parent) samples, or every sample including children.",
+        "enum": [
+          "none",
+          "parent_only",
+          "all"
+        ],
+        "title": "Screenshot Mode",
+        "type": "string"
+      },
+      "screenshot_budget_kb": {
+        "default": 2048,
+        "description": "Total size (KB, base64) of embedded screenshots across the whole report. Once reached, the remaining screenshots are left out and the sample is marked screenshots_truncated.",
+        "title": "Screenshot Budget Kb",
+        "type": "integer"
       }
     },
     "title": "BuildReportArguments",
@@ -166,6 +183,18 @@
             },
             "title": "Sample Child Samples",
             "type": "array"
+          },
+          "has_screenshots": {
+            "default": false,
+            "description": "Any analysis in sample_analyses carries screenshots.",
+            "title": "Has Screenshots",
+            "type": "boolean"
+          },
+          "screenshots_truncated": {
+            "default": false,
+            "description": "Some screenshots were left out because the report's screenshot budget ran out.",
+            "title": "Screenshots Truncated",
+            "type": "boolean"
           },
           "errors": {
             "additionalProperties": {

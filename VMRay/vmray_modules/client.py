@@ -99,6 +99,7 @@ class VMRayClient:
     _sample_analyses = "/rest/analysis/sample/{sample_id}"
     _sample_submissions = "/rest/submission/sample/{sample_id}"
     _submission_analyses = "/rest/analysis/submission/{submission_id}"
+    _analysis_archive = "/rest/analysis/{analysis_id}/archive/{archive_path}"
     _continuation = "/rest/continuation/{continuation_id}"
 
     def __init__(
@@ -272,6 +273,15 @@ class VMRayClient:
             self.session.get(self._url(self._submission_analyses.format(submission_id=submission_id)))
         )
         return self._filter_analyses_by_verdict(analyses, verdicts)
+
+    def get_analysis_archive_file(self, analysis_id: int, archive_path: str) -> bytes:
+        """One file from an analysis archive, e.g. 'logs/summary.json' or a
+        'screenshots/<sha1>.png' path listed in that summary."""
+        res = self.session.get(
+            self._url(self._analysis_archive.format(analysis_id=analysis_id, archive_path=archive_path))
+        )
+        self._raise_for_status(res)
+        return res.content
 
     @staticmethod
     def _filter_analyses_by_verdict(

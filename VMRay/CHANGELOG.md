@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 2026-09-30 - 2.2.0
+
+### Added
+
+- `BuildReport` — analysis screenshots, embedded in the report as compressed JPEG.
+- `BuildReport` — `screenshot_mode` and `screenshot_budget_kb` arguments.
+- `RenderReport` — screenshots section, with a notice when some were left out.
+
+### Changed
+
+- `RenderReport` — comment styled like the VMRay TheHive report: coloured badges, collapsible sections and MITRE ATT&CK links.
+
+### Security
+
+- `RenderReport` — values from the analysed sample are escaped, so it cannot inject links or images into the comment.
+
 ## 2026-09-28 - 2.1.1
 
 ### Changed

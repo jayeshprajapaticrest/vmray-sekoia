@@ -1,4 +1,10 @@
+import base64
+import io
+import json as jsonlib
+import re
+
 import pytest
+from PIL import Image
 from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.build_report_action import BuildReport
@@ -18,8 +24,10 @@ def ok(data):
 
 
 def mock_full_sample(requests_mock, sample_id, children=(), latest_submission=True):
-    """Every endpoint BuildReport calls for one sample."""
+    """Every endpoint BuildReport calls for one sample. It has no screenshots: VMRay answers the
+    analysis-archive lookup with a 404, which BuildReport must treat as "nothing to embed"."""
     r = requests_mock
+    r.get(re.compile(rf"{BASE_URL}/rest/analysis/\d+/archive/.*"), status_code=404, json={"error_msg": "not found"})
     r.get(
         f"{BASE_URL}/rest/sample/{sample_id}",
         json=ok({"sample_id": sample_id, "sample_verdict": "malicious", "sample_child_sample_ids": list(children)}),
@@ -187,3 +195,116 @@ def test_unfetchable_child_is_recorded_on_the_parent(requests_mock):
     assert "child_sample:43" in sample["errors"]
     assert sample["sample_child_samples"] == []
     assert sample["sample_iocs"]["iocs"]["urls"]  # parent report still complete
+
+
+# -- screenshots (the analyzer's _fetch_screenshots) ------------------------------------
+
+
+def png(width, height, color=(200, 30, 30)):
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def mock_screenshot_sample(requests_mock, sample_id, analyses, shots_by_analysis, children=()):
+    """A sample whose latest submission has `analyses`; each analysis archive lists `shots_by_analysis[id]`."""
+    r = requests_mock
+    r.get(
+        f"{BASE_URL}/rest/sample/{sample_id}",
+        json=ok({"sample_id": sample_id, "sample_child_sample_ids": list(children)}),
+    )
+    r.get(f"{BASE_URL}/rest/submission/sample/{sample_id}", json=ok([{"submission_id": sample_id * 10}]))
+    r.get(f"{BASE_URL}/rest/analysis/submission/{sample_id * 10}", json=ok(analyses))
+    for path in ("vtis", "mitre_attack", "iocs"):
+        r.get(f"{BASE_URL}/rest/sample/{sample_id}/{path}", json=ok({}))
+    r.get(f"{BASE_URL}/rest/sample/{sample_id}/classifications", json=ok({}))
+    r.get(f"{BASE_URL}/rest/sample/{sample_id}/threat_names", json=ok({}))
+    for analysis_id, shots in shots_by_analysis.items():
+        summary = {"screenshots": [{"screenshot_archive_path": f"screenshots/{name}"} for name in shots]}
+        r.get(
+            f"{BASE_URL}/rest/analysis/{analysis_id}/archive/logs/summary.json",
+            content=jsonlib.dumps(summary).encode(),
+        )
+        for name, content in shots.items():
+            r.get(f"{BASE_URL}/rest/analysis/{analysis_id}/archive/screenshots/{name}", content=content)
+
+
+def archive_calls(requests_mock):
+    return [r.path for r in requests_mock.request_history if "/archive/" in r.path]
+
+
+def test_screenshots_are_embedded_as_compressed_jpeg_newest_analysis_first(requests_mock):
+    analyses = [
+        {"analysis_id": 1, "analysis_created": "2026-09-24T04:00:00"},
+        {"analysis_id": 2, "analysis_created": "2026-09-24T05:00:00"},
+    ]
+    mock_screenshot_sample(requests_mock, 42, analyses, {1: {"a.png": png(100, 60)}, 2: {"b.png": png(1600, 900)}})
+
+    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+
+    assert sample["has_screenshots"] is True
+    assert sample["screenshots_truncated"] is False
+    newest, older = sample["sample_analyses"]
+    assert newest["analysis_id"] == 2  # sorted newest first, as in the analyzer
+    shot = newest["analysis_screenshots"][0]
+    assert shot["name"] == "b.png"  # "screenshots/" prefix stripped
+    image = Image.open(io.BytesIO(base64.b64decode(shot["data"])))
+    assert image.format == "JPEG"
+    assert image.width == 800  # 1600px downscaled, aspect kept
+    assert image.height == 450
+    assert older["analysis_screenshots"][0]["name"] == "a.png"
+
+
+def test_budget_truncates_and_skips_the_rest(requests_mock):
+    shots = {f"s{i}.png": png(800, 600, (i * 20, 90, 200)) for i in range(5)}
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1, "analysis_created": "x"}], {1: shots})
+
+    sample = make_action().run({"samples": [{"sample_id": 42}], "screenshot_budget_kb": 12})["samples"][0]
+
+    kept = sample["sample_analyses"][0]["analysis_screenshots"]
+    assert sample["screenshots_truncated"] is True
+    assert 0 < len(kept) < 5
+    assert sum(len(s["data"]) for s in kept) <= 12 * 1024
+
+
+def test_screenshot_mode_none_fetches_nothing(requests_mock):
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"a.png": png(10, 10)}})
+
+    sample = make_action().run({"samples": [{"sample_id": 42}], "screenshot_mode": "none"})["samples"][0]
+
+    assert archive_calls(requests_mock) == []
+    assert sample["has_screenshots"] is False
+
+
+def test_parent_only_skips_children_and_all_includes_them(requests_mock):
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"a.png": png(10, 10)}}, children=[43])
+    mock_screenshot_sample(requests_mock, 43, [{"analysis_id": 2}], {2: {"c.png": png(10, 10)}})
+
+    parent_only = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+    assert parent_only["has_screenshots"] is True
+    assert parent_only["sample_child_samples"][0]["has_screenshots"] is False
+
+    everything = make_action().run({"samples": [{"sample_id": 42}], "screenshot_mode": "all"})["samples"][0]
+    assert everything["sample_child_samples"][0]["has_screenshots"] is True
+
+
+def test_unreadable_screenshot_is_skipped_and_the_rest_kept(requests_mock):
+    shots = {"broken.png": b"not an image", "ok.png": png(20, 20)}
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: shots})
+
+    sample = make_action().run({"samples": [{"sample_id": 42}]})["samples"][0]
+
+    assert [s["name"] for s in sample["sample_analyses"][0]["analysis_screenshots"]] == ["ok.png"]
+
+
+def test_missing_screenshot_summary_never_fails_the_report(requests_mock):
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {})
+    requests_mock.get(
+        f"{BASE_URL}/rest/analysis/1/archive/logs/summary.json", status_code=404, json={"error_msg": "x"}
+    )
+
+    result = make_action().run({"samples": [{"sample_id": 42}]})
+
+    sample = result["samples"][0]
+    assert sample["has_screenshots"] is False
+    assert sample["errors"] == {}

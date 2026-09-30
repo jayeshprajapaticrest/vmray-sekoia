@@ -1,10 +1,11 @@
 [project]
 name = "automation-module-vmray"
-version = "2.1.1"
+version = "2.2.0"
 description = "VMRay Platform sandbox integration for Sekoia"
 authors = []
 requires-python = ">=3.11,<4"
 dependencies = [
+	"pillow>=12.3.0",
 	"sekoia-automation-sdk>=1.26.0,<2",
 	"tenacity",
 ]
