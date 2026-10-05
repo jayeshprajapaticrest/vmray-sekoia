@@ -1,8 +1,9 @@
 """BuildReport — the Cortex-Analyzers VMRay analyzer's `_build_report`.
 
-Takes samples (e.g. from GetSamplesByHash) or submissions (e.g. from
-SubmitUrlSample), fetches every sample again — lookup and submit responses are
-incomplete — and attaches, per sample, the same sub-resources as the analyzer's
+Takes sample IDs (e.g. from GetSamplesByHash) or submission IDs (e.g. from
+SubmitUrlSample, each resolved to its sample), fetches every sample — lookup and
+submit responses are incomplete, so the analyzer refetches them too — and
+attaches, per sample, the same sub-resources as the analyzer's
 `_build_sample_node`: analyses of the latest submission, VTIs, MITRE ATT&CK,
 IOCs, classifications, threat names and screenshots, then recurses into child
 samples down to `max_recursion_depth`.
@@ -159,22 +160,32 @@ def build_sample_node(
 class BuildReport(VMRayAction):
     name = "Build report"
     description = (
-        "Build the full VMRay report for samples or submissions: analyses, VTIs, MITRE ATT&CK, IOCs, "
+        "Build the full VMRay report for sample IDs or submission IDs: analyses, VTIs, MITRE ATT&CK, IOCs, "
         "classifications, threat names and screenshots per sample, including child samples."
     )
     results_model = BuildReportResults
 
+    def _resolve_submissions(self, submission_ids: list[int], errors: dict[str, str]) -> list[int | None]:
+        sample_ids: list[int | None] = []
+        for submission_id in dict.fromkeys(submission_ids):
+            try:
+                sample_ids.append(self.client.update_submission(submission_id).get("submission_sample_id"))
+            except VMRayClientError as exc:
+                errors[f"submission:{submission_id}"] = str(exc)
+        return sample_ids
+
     def run(self, arguments: BuildReportArguments) -> BuildReportResults:
-        if arguments.samples:
-            sample_ids = [s.get("sample_id") for s in arguments.samples]
-        elif arguments.submissions:
-            sample_ids = [s.get("submission_sample_id") for s in arguments.submissions]
+        errors: dict[str, str] = {}
+        sample_ids: list[int | None]
+        if arguments.sample_ids:
+            sample_ids = list(arguments.sample_ids)
+        elif arguments.submission_ids:
+            sample_ids = self._resolve_submissions(arguments.submission_ids, errors)
         else:
-            raise MissingActionArgumentError("samples or submissions")
+            raise MissingActionArgumentError("sample_ids or submission_ids")
 
         budget = ScreenshotBudget(remaining=arguments.screenshot_budget_kb * 1024)
         samples: list[dict[str, Any]] = []
-        errors: dict[str, str] = {}
         for sample_id in dict.fromkeys(i for i in sample_ids if i is not None):
             try:
                 sample = self.client.get_sample(sample_id)

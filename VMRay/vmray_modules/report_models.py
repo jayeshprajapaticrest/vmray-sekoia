@@ -48,5 +48,17 @@ class ReportToIndicatorsArguments(ReportInput):
     )
 
 
+class IndicatorGroup(BaseModel):
+    """One add_ioc_to_ioc_collection call: its indicator_type and the values to push."""
+
+    type: str = Field(..., description="Sekoia indicator_type: IP address, domain, url, email or hash.")
+    indicators: list[str] = Field(default_factory=list)
+
+
 class ReportToIndicatorsResults(BaseModel):
     indicators: list[Indicator] = Field(default_factory=list)
+    indicator_groups: list[IndicatorGroup] = Field(
+        default_factory=list,
+        description="The same indicators grouped by type, one group per non-empty type — Add IOC to IOC Collection "
+        "takes a single indicator_type per call, so a Foreach over this list pushes every type with one node.",
+    )

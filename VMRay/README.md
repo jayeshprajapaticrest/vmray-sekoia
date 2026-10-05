@@ -20,9 +20,9 @@ The report flow mirrors the Cortex-Analyzers VMRay analyzer: find or create samp
 |---|---|
 | `GetSamplesByHash` | Look up SHA256/SHA1/MD5 hashes (a list; duplicates ignored) in VMRay's existing analyses and return every matching sample. Zero quota. `found` / `not_found` outputs. |
 | `SubmitUrlSample` | Submit a URL and wait until every resulting submission finishes (`timeout`, default 30 min). Accepts VMRay's submission options (`analyzer_mode`, `max_jobs`, `net_scheme_name`, `analysis_timeout`, …); unset ones fall back to the VMRay user's analyzer settings, and `shareable` (hash → VirusTotal) is always sent, default `false`. `completed` / `timed_out` / `submission_failed` outputs. |
-| `BuildReport` | The heavy lifting. Takes `samples` (from `GetSamplesByHash`) or `submissions` (from `SubmitUrlSample`) and, per sample, fetches analyses of the latest submission, VTIs, MITRE ATT&CK, IOCs, classifications and threat names — then the same for child samples down to `max_recursion_depth` (default 1). A failing section lands in that sample's `errors`; the rest is still filled. |
+| `BuildReport` | The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_ids` (from `SubmitUrlSample`, each resolved to its sample) and, per sample, fetches analyses of the latest submission, VTIs, MITRE ATT&CK, IOCs, classifications and threat names — then the same for child samples down to `max_recursion_depth` (default 1). A failing section lands in that sample's `errors`; the rest is still filled. |
 | `RenderReport` | Pure transform — a report into one markdown alert comment: every sample, its VTIs (strongest first, with scores), IOCs, MITRE ATT&CK, analyses and a line per child sample. |
-| `ReportToIndicators` | Pure transform — a report into Sekoia's flat, typed indicator list for `add_ioc_to_ioc_collection`. Only `malicious` samples contribute by default, each child judged on its own verdict; child samples also add their own SHA256. |
+| `ReportToIndicators` | Pure transform — a report into Sekoia's flat, typed indicator list for `add_ioc_to_ioc_collection`. Only `malicious` samples contribute by default, each child judged on its own verdict; child samples also add their own SHA256. Also returns `indicator_groups` — the same list grouped by type, one entry per non-empty type, for a Foreach that pushes every type with one `add_ioc_to_ioc_collection` node. |
 
 ## Known limitations
 
@@ -38,7 +38,7 @@ The report flow mirrors the Cortex-Analyzers VMRay analyzer: find or create samp
 
 ## Playbooks
 
-`playbooks/VMRay_Manual_Report.json` (Manual Trigger). It gets the alert and its events, extracts hashes and URLs, and runs a hash branch (`GetSamplesByHash` → `BuildReport` → `RenderReport` → comment → `ReportToIndicators` → IOC collection) and a URL branch (`SubmitUrlSample` → the same chain) in parallel. When an alert has both a hash and a URL, both branches run and each posts its own comment. Replace `ioc_collection_id` on both "Add hashes to IOC Collection" nodes before use.
+`playbooks/VMRay_Manual_Report.json` (Manual Trigger). It gets the alert and its events, extracts hashes and URLs, and runs a hash branch (`GetSamplesByHash` → `BuildReport` → `RenderReport` → comment → `ReportToIndicators` → Foreach over `indicator_groups` → IOC collection, one push per IOC type) and a URL branch (`SubmitUrlSample` → the same chain) in parallel. When an alert has both a hash and a URL, both branches run and each posts its own comment. Replace `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes before use.
 
 ## Development
 

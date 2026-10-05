@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-05 - 3.0.0
+
+### Added
+
+- `ReportToIndicators` — `indicator_groups` result: indicators grouped by type, one entry per non-empty type, so a Foreach pushes every type with one Add IOC to IOC Collection node.
+- `SubmitUrlSample` — `submission_ids` result: IDs of the finished submissions.
+
+### Changed
+
+- `BuildReport` — takes `sample_ids` or `submission_ids` instead of sample and submission objects; each submission ID is resolved to its sample, and one that cannot be is recorded in `errors`.
+- `RenderReport` — screenshots shown in list mode, like the VMRay TheHive report: a Name | Action table per analysis, each image behind a View toggle.
+
+### Removed
+
+- `BuildReport` — `samples` and `submissions` arguments, replaced by `sample_ids` and `submission_ids`.
+
 ## 2026-09-30 - 2.3.0
 
 ### Added

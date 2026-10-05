@@ -95,6 +95,24 @@ def test_action_defaults_to_malicious_only():
     assert {"type": "domain", "value": "sus.example"} not in result["indicators"]
 
 
+def test_action_groups_indicators_by_type():
+    """One group per non-empty type, in push order — the playbook's Foreach makes one add_ioc call per group."""
+    result = ReportToIndicators().run({"report": REPORT})
+
+    assert result["indicator_groups"] == [
+        {"type": "hash", "indicators": ["f" * 64, "d" * 64]},
+        {"type": "IP address", "indicators": ["203.0.113.9"]},
+        {"type": "domain", "indicators": ["evil.example"]},
+    ]
+
+
+def test_action_has_no_groups_without_indicators():
+    result = ReportToIndicators().run({"report": {"samples": [{"sample_verdict": "clean"}]}})
+
+    assert result["indicators"] == []
+    assert result["indicator_groups"] == []
+
+
 def test_action_requires_a_report():
     with pytest.raises(MissingActionArgumentError):
         ReportToIndicators().run({})

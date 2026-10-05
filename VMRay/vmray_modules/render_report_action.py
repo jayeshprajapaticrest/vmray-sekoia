@@ -5,7 +5,9 @@ sections, order, columns and colours. Sekoia renders comments as GitHub-flavoure
 markdown with Angular's HTML sanitizer, so the template's visual elements map to:
 coloured labels and score badges -> `<font color>`; Toggle/Details buttons ->
 `<details>` (`open` where the template starts expanded); the overview
-definition list -> an HTML table; screenshot tiles -> inline `data:` images.
+definition list -> an HTML table; screenshots -> long.html's list mode, a Name |
+Action table whose View toggle holds the one inline `data:` image (shown on click,
+so no separate thumbnail copy is embedded).
 
 Screenshots are returned separately (`screenshot_comments`), split into comments
 of at most `max_comment_kb` each: Sekoia rejects playbook action arguments above
@@ -61,7 +63,7 @@ _IOC_TYPES = (
 
 _MARKDOWN_SPECIALS = "\\`*_[]()!#~|"
 
-_SCREENSHOT_WIDTH = 320  # tile width, like long.html's grid (images are stored up to 800px wide)
+_SCREENSHOT_WIDTH = 600  # width of an opened screenshot (images are stored up to 800px wide)
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+=*")
 
 
@@ -264,19 +266,22 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
     return [*_title("Analyses"), *_toggle(table)]
 
 
-def _tiles(analysis: dict[str, Any]) -> list[str]:
-    return [
-        f'<img src="data:image/jpeg;base64,{shot["data"]}" alt="{_h(shot.get("name") or "screenshot")}" '
-        f'width="{_SCREENSHOT_WIDTH}">'
-        for shot in analysis.get("analysis_screenshots") or []
-        if isinstance(shot.get("data"), str) and _BASE64.fullmatch(shot["data"])
-    ]
+def _screenshot_rows(analysis: dict[str, Any]) -> list[str]:
+    """One list-mode table row per screenshot: its name, and a View toggle that reveals the image."""
+    rows = []
+    for shot in analysis.get("analysis_screenshots") or []:
+        if not (isinstance(shot.get("data"), str) and _BASE64.fullmatch(shot["data"])):
+            continue
+        name = _h(shot.get("name") or "screenshot")
+        image = f'<img src="data:image/jpeg;base64,{shot["data"]}" alt="{name}" width="{_SCREENSHOT_WIDTH}">'
+        rows.append(f"<tr><td>{name}</td><td><details><summary>View</summary>{image}</details></td></tr>")
+    return rows
 
 
 def _screenshots(sample: dict[str, Any]) -> list[str]:
     """The main comment only points at the screenshots: the images themselves go in separate comments
     (render_screenshot_comments), since all of them together exceed Sekoia's playbook argument limit."""
-    count = sum(len(_tiles(a)) for a in sample.get("sample_analyses") or [])
+    count = sum(len(_screenshot_rows(a)) for a in sample.get("sample_analyses") or [])
     if not (count or sample.get("screenshots_truncated")):
         return []
     body = []
@@ -297,7 +302,7 @@ def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
 
     def walk(sample: dict[str, Any]) -> None:
         for analysis in sample.get("sample_analyses") or []:
-            tiles = _tiles(analysis)
+            tiles = _screenshot_rows(analysis)
             if not tiles:
                 continue
             heading = (
@@ -315,10 +320,12 @@ def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
 
 
 _COMMENT_HEADER_RESERVE = 64  # room for the "## VMRay Screenshots (i/N)" line
+_TABLE_OPEN = "<table><tr><th>Name</th><th>Action</th></tr>"
+_TABLE_CLOSE = "</table>"
 
 
 def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[str]:
-    """Pack every screenshot tile, in order, into as few comments as fit under max_bytes each. A tile is
+    """Pack every screenshot row, in order, into as few comments as fit under max_bytes each. A row is
     never split; one bigger than the limit still gets a comment of its own."""
     budget = max(max_bytes - _COMMENT_HEADER_RESERVE, 1)
     chunks: list[list[tuple[str, list[str]]]] = []
@@ -326,12 +333,13 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
     size = 0
     for heading, tiles in _screenshot_groups(report):
         for tile in tiles:
+            group_cost = len(heading) + len(_TABLE_OPEN) + len(_TABLE_CLOSE) + 4
             opens_group = not current or current[-1][0] != heading
-            cost = len(tile) + 1 + (len(heading) + 4 if opens_group else 0)
+            cost = len(tile) + (group_cost if opens_group else 0)
             if current and size + cost > budget:
                 chunks.append(current)
                 current, size = [], 0
-                opens_group, cost = True, len(tile) + 1 + len(heading) + 4
+                opens_group, cost = True, len(tile) + group_cost
             if opens_group:
                 current.append((heading, []))
             current[-1][1].append(tile)
@@ -342,7 +350,11 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
     return [
         "\n".join(
             [f"## VMRay Screenshots ({index}/{len(chunks)})"]
-            + [line for heading, tiles in chunk for line in ("", heading, "", " ".join(tiles))]
+            + [
+                line
+                for heading, rows in chunk
+                for line in ("", heading, "", _TABLE_OPEN + "".join(rows) + _TABLE_CLOSE)
+            ]
         )
         for index, chunk in enumerate(chunks, start=1)
     ]

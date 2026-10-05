@@ -1,16 +1,15 @@
 {
   "name": "Build report",
-  "description": "Build the full VMRay report for samples or submissions: analyses, VTIs, MITRE ATT&CK, IOCs, classifications, threat names and screenshots per sample, including child samples.",
+  "description": "Build the full VMRay report for sample IDs or submission IDs: analyses, VTIs, MITRE ATT&CK, IOCs, classifications, threat names and screenshots per sample, including child samples.",
   "uuid": "a1414b6a-9500-55b8-8a5f-385bc3820501",
   "docker_parameters": "BuildReport",
   "arguments": {
     "properties": {
-      "samples": {
+      "sample_ids": {
         "anyOf": [
           {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "type": "integer"
             },
             "type": "array"
           },
@@ -19,15 +18,14 @@
           }
         ],
         "default": null,
-        "description": "Sample objects carrying sample_id \u2014 e.g. the `samples` of Get samples by hash.",
-        "title": "Samples"
+        "description": "VMRay sample IDs \u2014 e.g. the `sample_ids` of Get samples by hash.",
+        "title": "Sample Ids"
       },
-      "submissions": {
+      "submission_ids": {
         "anyOf": [
           {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "type": "integer"
             },
             "type": "array"
           },
@@ -36,8 +34,8 @@
           }
         ],
         "default": null,
-        "description": "Submission objects carrying submission_sample_id \u2014 e.g. the `submissions` of Submit URL sample. Used when `samples` is empty.",
-        "title": "Submissions"
+        "description": "VMRay submission IDs \u2014 e.g. the `submission_ids` of Submit URL sample. Each is resolved to its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
+        "title": "Submission Ids"
       },
       "max_recursion_depth": {
         "default": 1,
@@ -107,7 +105,7 @@
         "additionalProperties": {
           "type": "string"
         },
-        "description": "Samples that could not be fetched at all, keyed by sample_id.",
+        "description": "Samples that could not be fetched at all, keyed by sample_id \u2014 or by 'submission:<id>' when the submission itself could not be resolved to a sample.",
         "title": "Errors",
         "type": "object"
       }

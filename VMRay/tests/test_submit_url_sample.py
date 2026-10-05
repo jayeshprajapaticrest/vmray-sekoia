@@ -61,6 +61,7 @@ def test_waits_for_every_submission_in_the_response(requests_mock):
 
     result = make_action().run({"sample_url": URL, "query_retry_wait": 0.01})
 
+    assert result["submission_ids"] == [111, 112]
     assert result["sample_ids"] == [222, 223]
     assert result["pending_submission_ids"] == []
 
@@ -74,6 +75,7 @@ def test_timeout_returns_finished_and_pending(requests_mock):
     result = action.run({"sample_url": URL, "query_retry_wait": 0.01, "timeout": 0.05})
 
     assert result["timed_out"] is True
+    assert result["submission_ids"] == [111]  # only finished ones — 112 is in pending_submission_ids
     assert result["sample_ids"] == [222]
     assert result["pending_submission_ids"] == [112]
     assert action.outputs == {"timed_out": True}

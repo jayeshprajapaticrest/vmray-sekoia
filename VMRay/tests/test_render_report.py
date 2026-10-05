@@ -308,7 +308,11 @@ def test_screenshot_comment_tiles_labelled_by_sample_and_analysis():
     assert len(comments) == 1
     assert comments[0].startswith("## VMRay Screenshots (1/1)")
     assert "`invoice.pdf` · **vmray** — Windows 10 64-bit" in comments[0]
-    assert f'<img src="data:image/jpeg;base64,{SHOT}" alt="a.png" width="320">' in comments[0]
+    assert (
+        "<table><tr><th>Name</th><th>Action</th></tr>"
+        f'<tr><td>a.png</td><td><details><summary>View</summary><img src="data:image/jpeg;base64,{SHOT}" '
+        'alt="a.png" width="600"></details></td></tr></table>'
+    ) in comments[0]
     assert "**static**" not in comments[0]  # analyses without screenshots get no heading
 
 
@@ -320,6 +324,7 @@ def test_screenshots_split_so_every_comment_fits():
     assert all(len(c.encode()) <= 32 * 1024 for c in comments)
     assert [c.splitlines()[0] for c in comments] == [f"## VMRay Screenshots ({i}/3)" for i in (1, 2, 3)]
     assert sum(c.count("<img") for c in comments) == 7  # nothing lost
+    assert all(c.count("<table>") == c.count("</table>") for c in comments)  # every split part closes its table
     assert all("`invoice.pdf` · **vmray**" in c for c in comments)  # each part keeps its context
 
 
@@ -346,3 +351,11 @@ def test_action_returns_main_comment_and_screenshot_comments():
 
     assert "<img" not in result["content"]
     assert len(result["screenshot_comments"]) == 2
+
+
+def test_each_screenshot_is_embedded_once_behind_a_view_toggle():
+    comments = render_screenshot_comments({"samples": [with_screenshots(count=2)]}, 256 * 1024)
+
+    assert comments[0].count("<img") == 2  # one image per screenshot, no separate thumbnail copy
+    assert comments[0].count("<details><summary>View</summary>") == 2
+    assert "<details open" not in comments[0]  # collapsed until clicked

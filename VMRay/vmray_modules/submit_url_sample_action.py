@@ -7,8 +7,9 @@ Follows the Cortex-Analyzers VMRay analyzer: `submit_url_sample`, then
 `query_retry_wait` between rounds. One difference: the reference waits forever;
 this stops at `timeout` and reports what is still pending.
 
-Returns the finished submissions and their sample_ids. Building the full report
-(VTIs, IOCs, MITRE ATT&CK) is a separate action that takes those sample_ids.
+Returns the finished submissions, their submission_ids and sample_ids. Building
+the full report (VTIs, IOCs, MITRE ATT&CK) is a separate action that takes
+either list of IDs.
 """
 
 import time
@@ -62,6 +63,7 @@ class SubmitUrlSample(VMRayAction):
         self.set_output("timed_out" if timed_out else "completed", True)
         return SubmitUrlSampleResults(
             submissions=finished,
+            submission_ids=[s.submission_id for s in finished],
             sample_ids=sample_ids,
             pending_submission_ids=pending,
             timed_out=timed_out,

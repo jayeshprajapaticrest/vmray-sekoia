@@ -131,6 +131,9 @@ class SubmitUrlSampleArguments(SubmissionOptions):
 
 class SubmitUrlSampleResults(BaseModel):
     submissions: list[Submission] = Field(default_factory=list, description="Finished submissions.")
+    submission_ids: list[int] = Field(
+        default_factory=list, description="IDs of the finished submissions — input for the report."
+    )
     sample_ids: list[int] = Field(
         default_factory=list, description="Distinct sample_ids of the finished submissions — input for the report."
     )
@@ -204,13 +207,13 @@ class ReportSample(BaseModel):
 
 
 class BuildReportArguments(BaseModel):
-    samples: list[dict[str, Any]] | None = Field(
-        default=None, description="Sample objects carrying sample_id — e.g. the `samples` of Get samples by hash."
+    sample_ids: list[int] | None = Field(
+        default=None, description="VMRay sample IDs — e.g. the `sample_ids` of Get samples by hash."
     )
-    submissions: list[dict[str, Any]] | None = Field(
+    submission_ids: list[int] | None = Field(
         default=None,
-        description="Submission objects carrying submission_sample_id — e.g. the `submissions` of Submit URL "
-        "sample. Used when `samples` is empty.",
+        description="VMRay submission IDs — e.g. the `submission_ids` of Submit URL sample. Each is resolved to "
+        "its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
     )
     max_recursion_depth: int = Field(
         default=1,
@@ -243,7 +246,9 @@ class Report(BaseModel):
 
     samples: list[ReportSample] = Field(default_factory=list)
     errors: dict[str, str] = Field(
-        default_factory=dict, description="Samples that could not be fetched at all, keyed by sample_id."
+        default_factory=dict,
+        description="Samples that could not be fetched at all, keyed by sample_id — or by 'submission:<id>' when "
+        "the submission itself could not be resolved to a sample.",
     )
 
 
@@ -258,7 +263,9 @@ class BuildReportResults(BaseModel):
     )
     sample_ids: list[int] = Field(default_factory=list, description="Samples in the report.")
     errors: dict[str, str] = Field(
-        default_factory=dict, description="Samples that could not be fetched at all, keyed by sample_id."
+        default_factory=dict,
+        description="Samples that could not be fetched at all, keyed by sample_id — or by 'submission:<id>' when "
+        "the submission itself could not be resolved to a sample.",
     )
 
 

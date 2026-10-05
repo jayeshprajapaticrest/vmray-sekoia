@@ -1,6 +1,6 @@
 {
   "name": "Report to indicator list",
-  "description": "Convert a Build report result into the flat, typed indicator list Sekoia's add_ioc_to_ioc_collection expects \u2014 from malicious samples only by default, child samples included.",
+  "description": "Convert a Build report result into the flat, typed indicator list Sekoia's add_ioc_to_ioc_collection expects, and the same list grouped by type \u2014 from malicious samples only by default, child samples included.",
   "uuid": "90756fcf-55f7-515a-ab59-ee434b08ad21",
   "docker_parameters": "ReportToIndicators",
   "arguments": {
@@ -70,6 +70,28 @@
         ],
         "title": "Indicator",
         "type": "object"
+      },
+      "IndicatorGroup": {
+        "description": "One add_ioc_to_ioc_collection call: its indicator_type and the values to push.",
+        "properties": {
+          "type": {
+            "description": "Sekoia indicator_type: IP address, domain, url, email or hash.",
+            "title": "Type",
+            "type": "string"
+          },
+          "indicators": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Indicators",
+            "type": "array"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "IndicatorGroup",
+        "type": "object"
       }
     },
     "properties": {
@@ -78,6 +100,14 @@
           "$ref": "#/$defs/Indicator"
         },
         "title": "Indicators",
+        "type": "array"
+      },
+      "indicator_groups": {
+        "description": "The same indicators grouped by type, one group per non-empty type \u2014 Add IOC to IOC Collection takes a single indicator_type per call, so a Foreach over this list pushes every type with one node.",
+        "items": {
+          "$ref": "#/$defs/IndicatorGroup"
+        },
+        "title": "Indicator Groups",
         "type": "array"
       }
     },

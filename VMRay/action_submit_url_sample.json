@@ -315,6 +315,14 @@
         "title": "Submissions",
         "type": "array"
       },
+      "submission_ids": {
+        "description": "IDs of the finished submissions \u2014 input for the report.",
+        "items": {
+          "type": "integer"
+        },
+        "title": "Submission Ids",
+        "type": "array"
+      },
       "sample_ids": {
         "description": "Distinct sample_ids of the finished submissions \u2014 input for the report.",
         "items": {

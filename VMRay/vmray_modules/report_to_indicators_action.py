@@ -1,5 +1,7 @@
 """ReportToIndicators — pure transform: a BuildReport result -> Sekoia's flat,
-typed indicator list for add_ioc_to_ioc_collection.
+typed indicator list for add_ioc_to_ioc_collection, plus the same list grouped
+by type (`indicator_groups`): that action takes one indicator_type per call, so
+a playbook pushes every type with one Foreach over the groups.
 
 Walks every sample and (by default) its child samples. Each sample is judged
 on its own verdict: only samples in `verdicts` (default: malicious) contribute,
@@ -16,7 +18,7 @@ from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.base import VMRayAction
 from vmray_modules.models import Indicator, IOCSet
-from vmray_modules.report_models import ReportToIndicatorsArguments, ReportToIndicatorsResults
+from vmray_modules.report_models import IndicatorGroup, ReportToIndicatorsArguments, ReportToIndicatorsResults
 
 # category -> (Sekoia indicator_type, candidate value keys, tried in order)
 _CATEGORY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -116,11 +118,24 @@ def report_to_indicators(report: dict[str, Any], verdicts: list[str], include_ch
     return indicators
 
 
+# every indicator_type add_ioc_to_ioc_collection accepts, in push order
+_SEKOIA_TYPES = ("hash", "IP address", "domain", "url", "email")
+
+
+def group_indicators(indicators: list[Indicator]) -> list[IndicatorGroup]:
+    """One group per non-empty type, so a Foreach never pushes an empty list."""
+    groups = [
+        IndicatorGroup(type=indicator_type, indicators=[i.value for i in indicators if i.type == indicator_type])
+        for indicator_type in _SEKOIA_TYPES
+    ]
+    return [group for group in groups if group.indicators]
+
+
 class ReportToIndicators(VMRayAction):
     name = "Report to indicator list"
     description = (
         "Convert a Build report result into the flat, typed indicator list Sekoia's add_ioc_to_ioc_collection "
-        "expects — from malicious samples only by default, child samples included."
+        "expects, and the same list grouped by type — from malicious samples only by default, child samples included."
     )
     results_model = ReportToIndicatorsResults
 
@@ -131,6 +146,5 @@ class ReportToIndicators(VMRayAction):
             report = orjson.loads(self.data_path.joinpath(arguments.report_path).read_bytes())
         else:
             raise MissingActionArgumentError("report")
-        return ReportToIndicatorsResults(
-            indicators=report_to_indicators(report, arguments.verdicts, arguments.include_child_samples)
-        )
+        indicators = report_to_indicators(report, arguments.verdicts, arguments.include_child_samples)
+        return ReportToIndicatorsResults(indicators=indicators, indicator_groups=group_indicators(indicators))
