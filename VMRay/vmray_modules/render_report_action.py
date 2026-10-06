@@ -6,11 +6,13 @@ markdown with Angular's HTML sanitizer, so the template's visual elements map to
 coloured labels and score badges -> `<font color>`; section headings and their
 Toggle buttons -> one `<details open>` per section whose summary is the bold
 heading, MITRE's Details button -> a collapsed `<details>`; the overview
-definition list and detections -> one Property | Value table, styled like every
-other section; titles -> `<font size>` 5 (comment) and 4 (sample), so headings
-step down on one scale; screenshots -> long.html's list mode,
-one toggle per screenshot holding its single inline `data:` image, shown on click
-at the comment's full width (no thumbnail copy; a table cell would shrink it).
+definition list -> a Property | Value table, styled like every other section,
+and detections -> a table of their own; short columns kept from wrapping by
+non-breaking spaces and a minimum width (an invisible spacer image); titles ->
+`<font size>` 5 (comment) and 4 (sample), so headings step down on one scale;
+screenshots -> long.html's list mode, one toggle per screenshot holding its
+single inline `data:` image, shown on click at the comment's full width (no
+thumbnail copy; a table cell would shrink it).
 
 Screenshots are returned separately (`screenshot_comments`), split into comments
 of at most `max_comment_kb` each: Sekoia rejects playbook action arguments above
@@ -124,8 +126,28 @@ def _date(value: str) -> str:
 # -- layout helpers -------------------------------------------------------------
 
 
-def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
-    lines = ["| " + " | ".join(headers) + " |", "|" + "---|" * len(headers)]
+# 1x1 transparent GIF. Sekoia's tables break even single words to fit a long value in the next column, so
+# a short column (labels, verdicts, dates) gets a minimum width from an invisible image of that width in its
+# header — the only width control left once Sekoia strips `style`.
+_SPACER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+
+def _nowrap(text: str) -> str:
+    """Already-escaped text whose spaces must not wrap (multi-word labels, dates)."""
+    return text.replace(" ", "&nbsp;")
+
+
+def _header(headers: list[str], min_widths: dict[str, int] | None = None) -> list[str]:
+    cells = [
+        f'{h}<img src="{_SPACER}" width="{min_widths[h]}" height="1" alt="">' if min_widths and h in min_widths else h
+        for h in headers
+    ]
+    return ["| " + " | ".join(cells) + " |", "|" + "---|" * len(headers)]
+
+
+def _table(headers: list[str], rows: list[list[str]], min_widths: dict[str, int] | None = None) -> list[str]:
+    """A markdown table; `min_widths` maps a header to the pixel width its column must never shrink below."""
+    lines = _header(headers, min_widths)
     lines += ["| " + " | ".join(row) + " |" for row in rows[:_MAX_ROWS]]
     if len(rows) > _MAX_ROWS:
         lines.append("| " + " | ".join([f"_…and {len(rows) - _MAX_ROWS} more_"] + [""] * (len(headers) - 1)) + " |")
@@ -173,15 +195,12 @@ def _mitre_link(technique_id: str) -> str:
 
 
 def _overview(sample: dict[str, Any]) -> list[str]:
-    """long.html's overview and detections, as one Property | Value table styled like every other section."""
+    """long.html's overview, as a Property | Value table styled like every other section."""
     rows = [["Verdict", _verdict(sample.get("sample_verdict"))]]
     if sample.get("sample_vti_score") is not None:
         rows.append(["VTI Score", f"{_text(sample['sample_vti_score'])}/100"])
     if sample.get("sample_verdict_reason_description"):
         rows.append(["Reason", _text(sample["sample_verdict_reason_description"])])
-    for key, label in (("sample_threat_names", "Threat Names"), ("sample_classifications", "Classifications")):
-        if sample.get(key):
-            rows.append([label, " ".join(_code(v) for v in sample[key])])
     url = sample.get("sample_url") or sample.get("sample_display_url")
     if sample.get("sample_type") == "URL" and url:
         rows.append(["URL", _code(url)])
@@ -190,20 +209,34 @@ def _overview(sample: dict[str, Any]) -> list[str]:
     if sample.get("sample_type"):
         rows.append(["Type", _text(sample["sample_type"])])
     if sample.get("sample_created"):
-        rows.append(["Created", _text(_date(sample["sample_created"]))])
+        rows.append(["Created", _nowrap(_text(_date(sample["sample_created"])))])
     for key, label in (("sample_md5hash", "MD5"), ("sample_sha1hash", "SHA1"), ("sample_sha256hash", "SHA256")):
         if sample.get(key):
             rows.append([label, _code(sample[key])])
     if sample.get("sample_webif_url"):
         rows.append(["Report", f'<a href="{_h(sample["sample_webif_url"])}">View in VMRay</a>'])
-    return _section("Overview", _table(["Property", "Value"], [[f"**{label}**", value] for label, value in rows]))
+    table = _table(
+        ["Property", "Value"], [[f"**{_nowrap(label)}**", value] for label, value in rows], {"Property": 110}
+    )
+    return _section("Overview", table)
+
+
+def _detections(sample: dict[str, Any]) -> list[str]:
+    rows = [
+        [f"**{_nowrap(label)}**", " ".join(_code(v) for v in sample[key])]
+        for key, label in (("sample_threat_names", "Threat Names"), ("sample_classifications", "Classifications"))
+        if sample.get(key)
+    ]
+    return _section("Detections", _table(["Detection", "Values"], rows, {"Detection": 115})) if rows else []
 
 
 def _ioc_summary(iocs: dict[str, Any]) -> list[str]:
     present = [(label, len(iocs.get(key) or [])) for key, _value_key, label in _IOC_TYPES if iocs.get(key)]
     if not present:
         return []
-    return _section("IOC Summary", _table([label for label, _ in present], [[f"**{n}**" for _, n in present]]))
+    return _section(
+        "IOC Summary", _table([_nowrap(label) for label, _ in present], [[f"**{n}**" for _, n in present]])
+    )
 
 
 def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
@@ -212,13 +245,13 @@ def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
     rows = [
         [
             _score(vti.get("score")),
-            _text(vti.get("category") or "—"),
+            _nowrap(_text(vti.get("category") or "—")),
             _text(vti.get("operation") or "—"),
             _text(", ".join(vti.get("classifications") or []) or "—"),
         ]
         for vti in sorted(vtis, key=lambda v: v.get("score") or 0, reverse=True)
     ]
-    table = _table(["Score", "Category", "Operation", "Classification"], rows)
+    table = _table(["Score", "Category", "Operation", "Classification"], rows, {"Score": 45, "Category": 110})
     return _section("VMRay Threat Identifiers", table)
 
 
@@ -235,7 +268,7 @@ def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
         ]
         for t in techniques
     ]
-    details = _toggle(_table(["ID", "Technique", "Tactics"], rows), label="Details", expanded=False)
+    details = _toggle(_table(["ID", "Technique", "Tactics"], rows, {"ID": 85}), label="Details", expanded=False)
     return _section("MITRE ATT&CK", [buttons, *details])
 
 
@@ -258,7 +291,10 @@ def _iocs(iocs: dict[str, Any]) -> list[str]:
         omitted += max(0, len(items) - _MAX_ROWS)
     if not rows:
         return []
-    table = ["| Type | Value | Verdict |", "|---|---|---|", *("| " + " | ".join(row) + " |" for row in rows)]
+    table = [
+        *_header(["Type", "Value", "Verdict"], {"Type": 120, "Verdict": 95}),
+        *("| " + " | ".join(row) + " |" for row in rows),
+    ]
     if omitted:
         table.append(f"| _…and {omitted} more_ | | |")
     return _section("Indicators of Compromise", table)
@@ -271,12 +307,14 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
         [
             _text(a.get("analysis_analyzer_name") or "—"),
             _text(a.get("analysis_vm_description") or "—"),
-            _text(_date(a["analysis_created"])) if a.get("analysis_created") else "—",
+            _nowrap(_text(_date(a["analysis_created"]))) if a.get("analysis_created") else "—",
             _verdict(a.get("analysis_verdict")),
         ]
         for a in sorted(analyses, key=lambda a: a.get("analysis_created") or "", reverse=True)
     ]
-    table = _table(["Analysis", "Target Environment", "Created", "Verdict"], rows)
+    table = _table(
+        ["Analysis", "Target Environment", "Created", "Verdict"], rows, {"Analysis": 85, "Created": 145, "Verdict": 95}
+    )
     return _section("Analyses", table)
 
 
@@ -410,6 +448,7 @@ def _render_sample(sample: dict[str, Any]) -> list[str]:
     iocs = (sample.get("sample_iocs") or {}).get("iocs") or {}
     lines = [
         *_overview(sample),
+        *_detections(sample),
         *_ioc_summary(iocs),
         *_threat_indicators((sample.get("sample_threat_indicators") or {}).get("threat_indicators") or []),
         *_mitre((sample.get("sample_mitre_attack") or {}).get("mitre_attack_techniques") or []),

@@ -77,6 +77,18 @@ def title(text, size):
     return f'<font size="{size}"><b>{text}</b></font>'
 
 
+SPACER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+
+def spacer(width):
+    return f'<img src="{SPACER}" width="{width}" height="1" alt="">'
+
+
+def live_images(text):
+    """<img> tags that are not the invisible column-width spacers."""
+    return text.count("<img") - text.count(f'<img src="{SPACER}"')
+
+
 @pytest.fixture
 def content():
     return render_report({"samples": [ROOT]})
@@ -86,6 +98,7 @@ def test_comment_title_and_section_headings(content):
     assert content.startswith(title("VMRay Report", 5))  # one size scale: comment 5, sample 4, sections bold
     for section in (
         "Overview",
+        "Detections",
         "IOC Summary",
         "VMRay Threat Identifiers",
         "MITRE ATT&amp;CK",
@@ -99,21 +112,30 @@ def test_comment_title_and_section_headings(content):
 
 def test_overview_is_a_property_value_table_like_every_other_section(content):
     section = content[content.index(heading("Overview")) :]
-    assert section.split("\n")[2:4] == ["| Property | Value |", "|---|---|"]
+    assert section.split("\n")[2:4] == [f"| Property{spacer(110)} | Value |", "|---|---|"]
     assert "| **Verdict** | " + badge("MALICIOUS", RED) + " |" in content
-    assert "| **VTI Score** | 100/100 |" in content
+    assert "| **VTI&nbsp;Score** | 100/100 |" in content  # a label never wraps
     assert "| **URL** | `http://evil.example/login` |" in content
     assert "sample.url" not in content  # a URL sample's container filename is noise
-    assert "| **Created** | 2026-09-24 04:59:46 |" in content  # long.html's date format
+    assert "| **Created** | 2026-09-24&nbsp;04:59:46 |" in content  # long.html's date format, kept on one line
     assert f"| **SHA256** | `{'a' * 64}` |" in content
     assert '| **Report** | <a href="https://eu.cloud.vmray.com/samples/42">View in VMRay</a> |' in content
     assert "<table" not in content
 
 
-def test_detections_are_overview_rows(content):
-    assert "| **Threat Names** | `ClickFix` |" in content
-    assert "| **Classifications** | `Downloader` |" in content
-    assert "Detections" not in content
+def test_detections_section_of_its_own(content):
+    section = content[content.index(heading("Detections")) :]
+    assert section.split("\n")[2] == f"| Detection{spacer(115)} | Values |"
+    assert "| **Threat&nbsp;Names** | `ClickFix` |" in section
+    assert "| **Classifications** | `Downloader` |" in section
+    assert content.index(heading("Overview")) < content.index(heading("Detections")) < content.index("IOC Summary")
+
+
+def test_short_columns_have_a_minimum_width(content):
+    assert f"| Type{spacer(120)} | Value | Verdict{spacer(95)} |" in content  # IOCs
+    assert f"| Score{spacer(45)} | Category{spacer(110)} | Operation | Classification |" in content
+    assert f"| Analysis{spacer(85)} | Target Environment | Created{spacer(145)} | Verdict{spacer(95)} |" in content
+    assert f"| ID{spacer(85)} | Technique | Tactics |" in content
 
 
 def test_ioc_summary_counters(content):
@@ -124,7 +146,7 @@ def test_ioc_summary_counters(content):
 def test_section_heading_is_its_own_toggle(content):
     assert "Toggle" not in content  # no separate Toggle button under the heading
     section = content[content.index(heading("VMRay Threat Identifiers")) :]
-    assert section.split("\n")[2].startswith("| Score |")  # table straight under the heading
+    assert section.split("\n")[2].startswith("| Score<img")  # table straight under the heading
 
 
 def test_threat_identifiers_coloured_scores(content):
@@ -148,8 +170,8 @@ def test_ioc_table_with_coloured_verdicts(content):
 
 
 def test_analyses_newest_first_with_formatted_dates(content):
-    assert "| vmray | Windows 10 64-bit | 2026-09-24 05:00:00 | " + badge("MALICIOUS", RED) + " |" in content
-    assert "| static | — | 2026-09-24 04:00:00 | " + badge("CLEAN", GREEN) + " |" in content
+    assert "| vmray | Windows 10 64-bit | 2026-09-24&nbsp;05:00:00 | " + badge("MALICIOUS", RED) + " |" in content
+    assert "| static | — | 2026-09-24&nbsp;04:00:00 | " + badge("CLEAN", GREEN) + " |" in content
     assert content.index("Windows 10 64-bit") < content.index("| static |")
 
 
@@ -174,7 +196,7 @@ def test_odd_technique_id_is_never_put_into_a_link():
 def test_sections_are_spaced_apart(content):
     """Sekoia puts no margin between toggles, so every section is followed by a spacer line."""
     sections = content.count("<details open><summary><b>")
-    assert sections == 7  # every section of the fixture: no screenshots
+    assert sections == 8  # every section of the fixture: no screenshots
     assert content.count("</details>\n<br>") == sections  # MITRE's inner Details toggle gets none
 
 
@@ -188,7 +210,7 @@ def test_partial_data_warning(content):
 
 def test_screenshots_never_rendered(content):
     assert "Screenshot" not in content
-    assert "<img" not in content
+    assert live_images(content) == 0
 
 
 def test_missing_verdict_is_grey_na():
@@ -206,7 +228,7 @@ def test_hostile_filename_is_escaped_in_the_overview():
     content = render_report({"samples": [{"sample_id": 1, "sample_filename": HOSTILE}]})
 
     assert "| **Filename** | `" + HOSTILE + "` |" in content  # a literal code span — nothing inside is live
-    assert content.count("<img") == 1  # only the one inside that code span
+    assert live_images(content) == 1  # only the one inside that code span
 
 
 def test_hostile_values_are_escaped_in_markdown_tables():
@@ -228,7 +250,7 @@ def test_hostile_values_are_escaped_in_markdown_tables():
         "<b>![x](http://attacker.example/p.png) &lt;img src=&quot;http://attacker.example/q.png&quot;&gt;" in content
     )
     # the only raw "<img" is inside the code span, never as live markup
-    assert content.count("<img") == content.count("`" + HOSTILE + "`")
+    assert live_images(content) == content.count("`" + HOSTILE + "`")
 
 
 def test_multiple_samples_and_report_errors():
@@ -331,7 +353,7 @@ def test_main_comment_points_at_screenshots_without_embedding_them():
 
     section = content[content.index(heading("Screenshots")) :]
     assert "**3 screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s)." in section
-    assert "<img" not in content  # images never go in the main comment
+    assert live_images(content) == 0  # screenshots never go in the main comment
 
 
 def test_screenshots_pointer_comes_after_analyses_and_before_children():
@@ -395,7 +417,7 @@ def test_action_returns_main_comment_and_screenshot_comments():
         {"report": {"samples": [with_screenshots(data="A" * 10_000, count=4)]}, "max_comment_kb": 32}
     )
 
-    assert "<img" not in result["content"]
+    assert live_images(result["content"]) == 0
     assert len(result["screenshot_comments"]) == 2
 
 

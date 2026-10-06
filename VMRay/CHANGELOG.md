@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-06 - 3.2.1
+
+### Changed
+
+- `RenderReport` — Detections back as a section of its own, after Overview.
+
+### Fixed
+
+- `RenderReport` — short table columns (labels, types, verdicts, dates) wrapping when a long value shared the table: multi-word labels and dates no longer break, and those columns keep a minimum width.
+
 ## 2026-10-06 - 3.2.0
 
 ### Changed
