@@ -29,9 +29,10 @@ _CATEGORY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
     "emails": ("email", ("sender", "email_address", "email", "value")),
 }
 
-# `files` gets its own handling: prefer the strongest hash VMRay reports,
-# whether it comes as a flat key or a nested {type, value} / {algo: hash} list.
-_HASH_PRIORITY = ("sha256", "sha1", "md5")
+# `files` gets its own handling: a file IOC carries `hashes`, a list of
+# {md5_hash, sha1_hash, sha256_hash, ...} — one entry per file content seen.
+# Each entry contributes its strongest hash, as the Cortex analyzer does.
+_HASH_PRIORITY = ("sha256_hash", "sha1_hash", "md5_hash")
 
 
 def _extract_value(item: dict[str, Any], candidate_keys: tuple[str, ...]) -> str | None:
@@ -42,27 +43,15 @@ def _extract_value(item: dict[str, Any], candidate_keys: tuple[str, ...]) -> str
     return None
 
 
-def _extract_hash(item: dict[str, Any]) -> str | None:
-    for algo in _HASH_PRIORITY:
-        if isinstance(item.get(algo), str) and item[algo]:
-            return item[algo]
-
-    hashes = item.get("hashes")
-    if isinstance(hashes, dict):
-        for algo in _HASH_PRIORITY:
-            if isinstance(hashes.get(algo), str) and hashes[algo]:
-                return hashes[algo]
-    elif isinstance(hashes, list):
-        by_algo = {
-            h.get("type", "").lower(): h.get("value")
-            for h in hashes
-            if isinstance(h, dict) and isinstance(h.get("value"), str)
-        }
-        for algo in _HASH_PRIORITY:
-            if by_algo.get(algo):
-                return by_algo[algo]
-
-    return None
+def _extract_hashes(item: dict[str, Any]) -> list[str]:
+    values = []
+    for entry in item.get("hashes") or []:
+        if not isinstance(entry, dict):
+            continue
+        value = _extract_value(entry, _HASH_PRIORITY)
+        if value is not None:
+            values.append(value)
+    return values
 
 
 def iocs_to_indicators(iocs: IOCSet) -> list[Indicator]:
@@ -78,11 +67,11 @@ def iocs_to_indicators(iocs: IOCSet) -> list[Indicator]:
             indicators.append(Indicator(value=value, type=indicator_type))
 
     for item in iocs.files:
-        value = _extract_hash(item)
-        if value is None or ("hash", value) in seen:
-            continue
-        seen.add(("hash", value))
-        indicators.append(Indicator(value=value, type="hash"))
+        for value in _extract_hashes(item):
+            if ("hash", value) in seen:
+                continue
+            seen.add(("hash", value))
+            indicators.append(Indicator(value=value, type="hash"))
 
     return indicators
 

@@ -4,9 +4,11 @@ Mirrors the Cortex-Analyzers TheHive template (VMRay_4_1/long.html): same
 sections, order, columns and colours. Sekoia renders comments as GitHub-flavoured
 markdown with Angular's HTML sanitizer, so the template's visual elements map to:
 coloured labels and score badges -> `<font color>`; section headings and their
-Toggle buttons -> one `<details open>` per section whose summary is the heading
-(bold `<font size>` text), MITRE's Details button -> a collapsed `<details>`; the
-overview definition list -> an HTML table; screenshots -> long.html's list mode,
+Toggle buttons -> one `<details open>` per section whose summary is the bold
+heading, MITRE's Details button -> a collapsed `<details>`; the overview
+definition list and detections -> one Property | Value table, styled like every
+other section; titles -> `<font size>` 5 (comment) and 4 (sample), so headings
+step down on one scale; screenshots -> long.html's list mode,
 one toggle per screenshot holding its single inline `data:` image, shown on click
 at the comment's full width (no thumbnail copy; a table cell would shrink it).
 
@@ -135,11 +137,17 @@ def _toggle(body: list[str], label: str, expanded: bool = True) -> list[str]:
     return ["", f"<details{' open' if expanded else ''}><summary>{label}</summary>", "", *body, "", "</details>"]
 
 
+def _heading(text: str, size: int) -> str:
+    """A title line. <font size> rather than a markdown heading, so the comment title, the per-sample
+    header and the section headings all step down on one scale: 5, 4, then bold body text."""
+    return f'<font size="{size}"><b>{_h(text)}</b></font>'
+
+
 def _section(title: str, body: list[str]) -> list[str]:
     """A long.html section whose heading is its own toggle (open by default) — no separate Toggle button.
-    Bold text enlarged with <font size>, not an <h4>: a heading tag inside <summary> pushes the disclosure
-    triangle onto its own line, and Sekoia strips the CSS that would fix it."""
-    return _toggle(body, label=f'<b><font size="4">{_h(title.upper())}</font></b>')
+    Bold text, not an <h4>: a heading tag inside <summary> pushes the disclosure triangle onto its own
+    line, and Sekoia strips the CSS that would fix it."""
+    return [*_toggle(body, label=f"<b>{_h(title)}</b>"), "<br>"]  # Sekoia adds no margin between toggles
 
 
 def _sample_name(sample: dict[str, Any]) -> str:
@@ -150,43 +158,45 @@ def _sample_name(sample: dict[str, Any]) -> str:
     return name or sample.get("sample_sha256hash") or "Sample"
 
 
-def _mitre_url(technique_id: str) -> str:
-    return f"https://attack.mitre.org/techniques/{technique_id.replace('.', '/')}/"
+_TECHNIQUE_ID = re.compile(r"T\d{4}(\.\d{3})?")
+
+
+def _mitre_link(technique_id: str) -> str:
+    """A technique ID linked to attack.mitre.org. Plain link text: Sekoia shows a code span inside a link
+    as literal backticks. An ID not shaped like Txxxx[.yyy] is only shown, never put into a URL."""
+    if not _TECHNIQUE_ID.fullmatch(technique_id):
+        return _code(technique_id)
+    return f"[{technique_id}](https://attack.mitre.org/techniques/{technique_id.replace('.', '/')}/)"
 
 
 # -- sections (long.html 1-7) -------------------------------------------------------
 
 
 def _overview(sample: dict[str, Any]) -> list[str]:
-    rows = [("Verdict", _verdict(sample.get("sample_verdict")))]
+    """long.html's overview and detections, as one Property | Value table styled like every other section."""
+    rows = [["Verdict", _verdict(sample.get("sample_verdict"))]]
     if sample.get("sample_vti_score") is not None:
-        rows.append(("VTI Score", f"{_h(sample['sample_vti_score'])}/100"))
+        rows.append(["VTI Score", f"{_text(sample['sample_vti_score'])}/100"])
     if sample.get("sample_verdict_reason_description"):
-        rows.append(("Reason", _h(sample["sample_verdict_reason_description"])))
-    url = sample.get("sample_url") or sample.get("sample_display_url")
-    if sample.get("sample_type") == "URL" and url:
-        rows.append(("URL", f"<code>{_h(url)}</code>"))
-    elif sample.get("sample_filename"):
-        rows.append(("Filename", _h(sample["sample_filename"])))
-    if sample.get("sample_type"):
-        rows.append(("Type", _h(sample["sample_type"])))
-    if sample.get("sample_created"):
-        rows.append(("Created", _h(_date(sample["sample_created"]))))
-    for key, label in (("sample_md5hash", "MD5"), ("sample_sha1hash", "SHA1"), ("sample_sha256hash", "SHA256")):
-        if sample.get(key):
-            rows.append((label, f"<code>{_h(sample[key])}</code>"))
-    if sample.get("sample_webif_url"):
-        rows.append(("Report Link", f'<a href="{_h(sample["sample_webif_url"])}">View in VMRay</a>'))
-    body = "".join(f"<tr><td><b>{label}</b></td><td>{value}</td></tr>" for label, value in rows)
-    return _section("Overview", [f"<table>{body}</table>"])
-
-
-def _detections(sample: dict[str, Any]) -> list[str]:
-    lines = []
+        rows.append(["Reason", _text(sample["sample_verdict_reason_description"])])
     for key, label in (("sample_threat_names", "Threat Names"), ("sample_classifications", "Classifications")):
         if sample.get(key):
-            lines.append(f"**{label}:** " + " ".join(_code(v) for v in sample[key]) + "  ")
-    return _section("Detections", lines) if lines else []
+            rows.append([label, " ".join(_code(v) for v in sample[key])])
+    url = sample.get("sample_url") or sample.get("sample_display_url")
+    if sample.get("sample_type") == "URL" and url:
+        rows.append(["URL", _code(url)])
+    elif sample.get("sample_filename"):
+        rows.append(["Filename", _code(sample["sample_filename"])])
+    if sample.get("sample_type"):
+        rows.append(["Type", _text(sample["sample_type"])])
+    if sample.get("sample_created"):
+        rows.append(["Created", _text(_date(sample["sample_created"]))])
+    for key, label in (("sample_md5hash", "MD5"), ("sample_sha1hash", "SHA1"), ("sample_sha256hash", "SHA256")):
+        if sample.get(key):
+            rows.append([label, _code(sample[key])])
+    if sample.get("sample_webif_url"):
+        rows.append(["Report", f'<a href="{_h(sample["sample_webif_url"])}">View in VMRay</a>'])
+    return _section("Overview", _table(["Property", "Value"], [[f"**{label}**", value] for label, value in rows]))
 
 
 def _ioc_summary(iocs: dict[str, Any]) -> list[str]:
@@ -216,10 +226,10 @@ def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
     if not techniques:
         return []
     ids = [t["technique_id"] for t in techniques if t.get("technique_id")]
-    buttons = " ".join(f"[{_code(i)}]({_mitre_url(i)})" for i in ids)
+    buttons = " · ".join(_mitre_link(i) for i in ids)
     rows = [
         [
-            f"[{_code(t['technique_id'])}]({_mitre_url(t['technique_id'])})" if t.get("technique_id") else "—",
+            _mitre_link(t["technique_id"]) if t.get("technique_id") else "—",
             _text(t.get("technique") or "—"),
             _text(", ".join(t.get("tactics") or []) or "—"),
         ]
@@ -261,7 +271,7 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
         [
             _text(a.get("analysis_analyzer_name") or "—"),
             _text(a.get("analysis_vm_description") or "—"),
-            _code(_date(a["analysis_created"])) if a.get("analysis_created") else "—",
+            _text(_date(a["analysis_created"])) if a.get("analysis_created") else "—",
             _verdict(a.get("analysis_verdict")),
         ]
         for a in sorted(analyses, key=lambda a: a.get("analysis_created") or "", reverse=True)
@@ -317,7 +327,7 @@ def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
     return groups
 
 
-_COMMENT_HEADER_RESERVE = 64  # room for the "## VMRay Screenshots (i/N)" line
+_COMMENT_HEADER_RESERVE = 96  # room for the "VMRay Screenshots (i/N)" title line
 
 
 def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[str]:
@@ -331,11 +341,11 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
         for tile in tiles:
             group_cost = len(heading) + 2  # heading and the blank line around it
             opens_group = not current or current[-1][0] != heading
-            cost = len(tile) + 2 + (group_cost if opens_group else 0)  # each entry is its own HTML block
+            cost = len(tile) + (group_cost if opens_group else 0)
             if current and size + cost > budget:
                 chunks.append(current)
                 current, size = [], 0
-                opens_group, cost = True, len(tile) + 2 + group_cost
+                opens_group, cost = True, len(tile) + group_cost
             if opens_group:
                 current.append((heading, []))
             current[-1][1].append(tile)
@@ -345,36 +355,51 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
 
     return [
         "\n".join(
-            [f"## VMRay Screenshots ({index}/{len(chunks)})"]
-            + [line for heading, rows in chunk for line in ("", heading, "", "\n\n".join(rows))]
+            [_heading(f"VMRay Screenshots ({index}/{len(chunks)})", 5)]
+            # an analysis's entries on one line, like the child-sample tree: no blank lines to space them out
+            + [line for heading, rows in chunk for line in ("", heading, "", "".join(rows))]
         )
         for index, chunk in enumerate(chunks, start=1)
     ]
 
 
-def _child_rows(children: list[dict[str, Any]], depth: int = 0) -> list[list[str]]:
-    rows = []
+_TREE_MAX_DEPTH = 10  # long.html's cap, so a deep chain still renders
+
+
+def _tree_row(child: dict[str, Any], count: int) -> str:
+    """One long.html tree row: verdict, name, type, child count and report link. No detail sections."""
+    parts = [_verdict(child.get("sample_verdict")), f"<b>{_h(_sample_name(child))}</b>"]
+    if child.get("sample_type"):
+        parts.append(_h(child["sample_type"]))
+    if count:
+        parts.append(f"({count} {'child' if count == 1 else 'children'})")
+    if child.get("sample_webif_url"):
+        parts.append(f'<a href="{_h(child["sample_webif_url"])}">View in VMRay</a>')
+    return " · ".join(parts)
+
+
+def _child_tree(children: list[dict[str, Any]], depth: int = 1) -> list[str]:
+    """long.html's child-sample hierarchy: a sample with children is a collapsed toggle whose summary is
+    its row, its children indented below in a <dd> (a <blockquote> adds a line of space above and below);
+    a leaf is a plain row, padded to line up."""
+    lines = []
     for child in children:
         grandchildren = child.get("sample_child_samples") or []
         count = len(grandchildren) or len(child.get("sample_child_sample_ids") or [])
-        rows.append(
-            [
-                _verdict(child.get("sample_verdict")),
-                ("↳ " * depth) + _code(_sample_name(child)),
-                _text(child.get("sample_type") or "—"),
-                str(count) if count else "—",
-                f"[View in VMRay]({child['sample_webif_url']})" if child.get("sample_webif_url") else "—",
-            ]
-        )
-        rows += _child_rows(grandchildren, depth + 1)
-    return rows
+        if grandchildren and depth < _TREE_MAX_DEPTH:
+            lines.append(f"<details><summary>{_tree_row(child, count)}</summary><dd>")
+            lines += _child_tree(grandchildren, depth + 1)
+            lines.append("</dd></details>")
+        else:
+            lines.append(f"<div>&emsp;{_tree_row(child, count)}</div>")
+    return lines
 
 
 def _child_samples(sample: dict[str, Any]) -> list[str]:
     children = sample.get("sample_child_samples") or []
     if children:
-        table = _table(["Verdict", "Sample", "Type", "Children", "Report"], _child_rows(children))
-        return _section(f"Child Samples ({len(children)})", table)
+        # one line: a single HTML block markdown cannot split, with no newlines to become line breaks
+        return _section(f"Child Samples ({len(children)})", ["".join(_child_tree(children))])
     if sample.get("sample_child_sample_ids"):
         count = len(sample["sample_child_sample_ids"])
         return _section(f"Child Samples ({count})", ["_Not expanded — see the VMRay report._"])
@@ -385,7 +410,6 @@ def _render_sample(sample: dict[str, Any]) -> list[str]:
     iocs = (sample.get("sample_iocs") or {}).get("iocs") or {}
     lines = [
         *_overview(sample),
-        *_detections(sample),
         *_ioc_summary(iocs),
         *_threat_indicators((sample.get("sample_threat_indicators") or {}).get("threat_indicators") or []),
         *_mitre((sample.get("sample_mitre_attack") or {}).get("mitre_attack_techniques") or []),
@@ -402,12 +426,12 @@ def _render_sample(sample: dict[str, Any]) -> list[str]:
 
 def render_report(report: dict[str, Any]) -> str:
     samples = report.get("samples") or []
-    lines = ["## VMRay Report"]
+    lines = [_heading("VMRay Report", 5)]
     if not samples:
         lines += ["", "**No matches found for this observable.**"]
     for index, sample in enumerate(samples, start=1):
         if len(samples) > 1:
-            lines += ["", "---", "", f"### SAMPLE ({index}/{len(samples)})"]
+            lines += ["", "---", "", _heading(f"Sample {index} of {len(samples)}", 4)]
         lines += _render_sample(sample)
     if report.get("errors"):
         failed = ", ".join(_h(e) for e in sorted(report["errors"]))

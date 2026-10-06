@@ -26,7 +26,7 @@ REPORT = {
             "sample_iocs": {
                 "iocs": {
                     "domains": [{"domain": "evil.example"}],
-                    "files": [{"hashes": [{"type": "sha256", "value": "f" * 64}]}],
+                    "files": [{"filename": "dropped.exe", "hashes": [{"sha256_hash": "f" * 64}]}],
                 }
             },
             "sample_child_samples": [MALICIOUS_CHILD],
@@ -126,7 +126,13 @@ FULL_IOCS = {
     "urls": [{"url": "http://evil.example/payload"}],
     "email_addresses": [{"email_address": "attacker@evil.example"}],
     "emails": [{"sender": "other-attacker@evil.example"}],
-    "files": [{"sha256": "a" * 64, "sha1": "b" * 40, "md5": "c" * 32}],
+    # VMRay's real file IOC shape (FileIOCSerializer): hashes is a list of per-content hash sets
+    "files": [
+        {
+            "filename": "dropped.exe",
+            "hashes": [{"md5_hash": "c" * 32, "sha1_hash": "b" * 40, "sha256_hash": "a" * 64, "ssdeep_hash": "3:x:y"}],
+        }
+    ],
     # these three categories have no Sekoia indicator_type and must never
     # produce output, no matter their shape
     "mutexes": [{"name": "Global\\mtx1"}],
@@ -177,20 +183,20 @@ def test_deduplicates_same_value_and_type():
 
 
 @pytest.mark.parametrize(
-    "file_item,expected",
+    "hashes,expected",
     [
-        ({"sha256": "a" * 64}, "a" * 64),
-        ({"sha1": "b" * 40}, "b" * 40),  # falls back when sha256 absent
-        ({"hashes": {"sha256": "a" * 64, "md5": "c" * 32}}, "a" * 64),  # nested dict form
-        ({"hashes": [{"type": "SHA256", "value": "a" * 64}]}, "a" * 64),  # nested list form, case-insensitive
-        ({"hashes": [{"type": "md5", "value": "c" * 32}]}, "c" * 32),  # only md5 available anywhere
+        ([{"md5_hash": "c" * 32, "sha1_hash": "b" * 40, "sha256_hash": "a" * 64}], ["a" * 64]),  # sha256 preferred
+        ([{"md5_hash": "c" * 32, "sha1_hash": "b" * 40}], ["b" * 40]),  # falls back to sha1
+        ([{"md5_hash": "c" * 32}], ["c" * 32]),  # then md5
+        ([{"sha256_hash": "a" * 64}, {"sha256_hash": "d" * 64}], ["a" * 64, "d" * 64]),  # one per file content
+        ([{"ssdeep_hash": "3:x:y"}, "not-a-dict"], []),  # nothing Sekoia accepts
     ],
 )
-def test_hash_extraction_shapes(file_item, expected):
-    iocs = IOCSet.model_validate({"files": [file_item]})
+def test_file_hashes_from_vmray_shape(hashes, expected):
+    iocs = IOCSet.model_validate({"files": [{"filename": "dropped.exe", "hashes": hashes}]})
     indicators = iocs_to_indicators(iocs)
 
-    assert indicators_by_type(indicators, "hash") == [expected]
+    assert indicators_by_type(indicators, "hash") == expected
 
 
 def test_item_missing_every_candidate_key_is_skipped_not_raised():

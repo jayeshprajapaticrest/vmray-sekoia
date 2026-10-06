@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-06 - 3.2.0
+
+### Changed
+
+- `RenderReport` — headings on one size scale (comment title, sample, then bold section toggles) and in title case.
+- `RenderReport` — Overview and Detections merged into one Property | Value table, styled like the other sections.
+- `RenderReport` — a spacer line after every section.
+- `RenderReport` — child samples shown as a collapsible tree like the VMRay TheHive report: one row per sample, children indented under their parent.
+- `RenderReport` — MITRE ATT&CK technique IDs linked as plain text; an ID not shaped like a technique ID is never turned into a link.
+- `RenderReport` — analysis dates shown as plain text, and an analysis's screenshot entries listed without gaps.
+
+### Fixed
+
+- `ReportToIndicators` — file IOC hashes were never extracted: they are now read from VMRay's `hashes` list (`sha256_hash`, else `sha1_hash`, else `md5_hash`), so dropped files reach the IOC collection.
+
 ## 2026-10-06 - 3.1.0
 
 ### Changed

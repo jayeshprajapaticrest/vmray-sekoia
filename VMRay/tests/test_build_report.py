@@ -352,6 +352,6 @@ def test_report_file_feeds_render_report_and_report_to_indicators(requests_mock,
     mock_full_sample(requests_mock, 42)
     report_path = make_action().run({"sample_ids": [42]})["report_path"]
 
-    assert "## VMRay Report" in RenderReport().run({"report_path": report_path})["content"]
+    assert "<b>VMRay Report</b>" in RenderReport().run({"report_path": report_path})["content"]
     indicators = ReportToIndicators().run({"report_path": report_path})["indicators"]
     assert {"type": "url", "value": "http://evil.example"} in indicators
