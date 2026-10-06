@@ -3,11 +3,12 @@
 Mirrors the Cortex-Analyzers TheHive template (VMRay_4_1/long.html): same
 sections, order, columns and colours. Sekoia renders comments as GitHub-flavoured
 markdown with Angular's HTML sanitizer, so the template's visual elements map to:
-coloured labels and score badges -> `<font color>`; Toggle/Details buttons ->
-`<details>` (`open` where the template starts expanded); the overview
-definition list -> an HTML table; screenshots -> long.html's list mode, a Name |
-Action table whose View toggle holds the one inline `data:` image (shown on click,
-so no separate thumbnail copy is embedded).
+coloured labels and score badges -> `<font color>`; section headings and their
+Toggle buttons -> one `<details open>` per section whose summary is the heading
+(bold `<font size>` text), MITRE's Details button -> a collapsed `<details>`; the
+overview definition list -> an HTML table; screenshots -> long.html's list mode,
+one toggle per screenshot holding its single inline `data:` image, shown on click
+at the comment's full width (no thumbnail copy; a table cell would shrink it).
 
 Screenshots are returned separately (`screenshot_comments`), split into comments
 of at most `max_comment_kb` each: Sekoia rejects playbook action arguments above
@@ -63,7 +64,7 @@ _IOC_TYPES = (
 
 _MARKDOWN_SPECIALS = "\\`*_[]()!#~|"
 
-_SCREENSHOT_WIDTH = 600  # width of an opened screenshot (images are stored up to 800px wide)
+_SCREENSHOT_WIDTH = "100%"  # an opened screenshot fills the comment's width (images are stored up to 800px wide)
 _BASE64 = re.compile(r"[A-Za-z0-9+/]+=*")
 
 
@@ -129,13 +130,16 @@ def _table(headers: list[str], rows: list[list[str]]) -> list[str]:
     return lines
 
 
-def _title(title: str) -> list[str]:
-    return ["", f"#### {title.upper()}"]
-
-
-def _toggle(body: list[str], label: str = "Toggle", expanded: bool = True) -> list[str]:
-    """long.html's Toggle/Details button. The blank lines let markdown (tables) render inside."""
+def _toggle(body: list[str], label: str, expanded: bool = True) -> list[str]:
+    """A collapsible block. The blank lines let markdown (tables) render inside."""
     return ["", f"<details{' open' if expanded else ''}><summary>{label}</summary>", "", *body, "", "</details>"]
+
+
+def _section(title: str, body: list[str]) -> list[str]:
+    """A long.html section whose heading is its own toggle (open by default) — no separate Toggle button.
+    Bold text enlarged with <font size>, not an <h4>: a heading tag inside <summary> pushes the disclosure
+    triangle onto its own line, and Sekoia strips the CSS that would fix it."""
+    return _toggle(body, label=f'<b><font size="4">{_h(title.upper())}</font></b>')
 
 
 def _sample_name(sample: dict[str, Any]) -> str:
@@ -174,7 +178,7 @@ def _overview(sample: dict[str, Any]) -> list[str]:
     if sample.get("sample_webif_url"):
         rows.append(("Report Link", f'<a href="{_h(sample["sample_webif_url"])}">View in VMRay</a>'))
     body = "".join(f"<tr><td><b>{label}</b></td><td>{value}</td></tr>" for label, value in rows)
-    return [*_title("Overview"), "", f"<table>{body}</table>"]
+    return _section("Overview", [f"<table>{body}</table>"])
 
 
 def _detections(sample: dict[str, Any]) -> list[str]:
@@ -182,14 +186,14 @@ def _detections(sample: dict[str, Any]) -> list[str]:
     for key, label in (("sample_threat_names", "Threat Names"), ("sample_classifications", "Classifications")):
         if sample.get(key):
             lines.append(f"**{label}:** " + " ".join(_code(v) for v in sample[key]) + "  ")
-    return [*_title("Detections"), "", *lines] if lines else []
+    return _section("Detections", lines) if lines else []
 
 
 def _ioc_summary(iocs: dict[str, Any]) -> list[str]:
     present = [(label, len(iocs.get(key) or [])) for key, _value_key, label in _IOC_TYPES if iocs.get(key)]
     if not present:
         return []
-    return [*_title("IOC Summary"), "", *_table([label for label, _ in present], [[f"**{n}**" for _, n in present]])]
+    return _section("IOC Summary", _table([label for label, _ in present], [[f"**{n}**" for _, n in present]]))
 
 
 def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
@@ -205,7 +209,7 @@ def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
         for vti in sorted(vtis, key=lambda v: v.get("score") or 0, reverse=True)
     ]
     table = _table(["Score", "Category", "Operation", "Classification"], rows)
-    return [*_title("VMRay Threat Identifiers"), *_toggle(table)]
+    return _section("VMRay Threat Identifiers", table)
 
 
 def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
@@ -222,7 +226,7 @@ def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
         for t in techniques
     ]
     details = _toggle(_table(["ID", "Technique", "Tactics"], rows), label="Details", expanded=False)
-    return [*_title("MITRE ATT&CK"), "", buttons, *details]
+    return _section("MITRE ATT&CK", [buttons, *details])
 
 
 def _iocs(iocs: dict[str, Any]) -> list[str]:
@@ -247,7 +251,7 @@ def _iocs(iocs: dict[str, Any]) -> list[str]:
     table = ["| Type | Value | Verdict |", "|---|---|---|", *("| " + " | ".join(row) + " |" for row in rows)]
     if omitted:
         table.append(f"| _…and {omitted} more_ | | |")
-    return [*_title("Indicators of Compromise"), *_toggle(table)]
+    return _section("Indicators of Compromise", table)
 
 
 def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
@@ -263,18 +267,19 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
         for a in sorted(analyses, key=lambda a: a.get("analysis_created") or "", reverse=True)
     ]
     table = _table(["Analysis", "Target Environment", "Created", "Verdict"], rows)
-    return [*_title("Analyses"), *_toggle(table)]
+    return _section("Analyses", table)
 
 
 def _screenshot_rows(analysis: dict[str, Any]) -> list[str]:
-    """One list-mode table row per screenshot: its name, and a View toggle that reveals the image."""
+    """One list entry per screenshot: a toggle named after the screenshot that reveals the image at the
+    comment's full width (a table cell would squeeze it)."""
     rows = []
     for shot in analysis.get("analysis_screenshots") or []:
         if not (isinstance(shot.get("data"), str) and _BASE64.fullmatch(shot["data"])):
             continue
         name = _h(shot.get("name") or "screenshot")
         image = f'<img src="data:image/jpeg;base64,{shot["data"]}" alt="{name}" width="{_SCREENSHOT_WIDTH}">'
-        rows.append(f"<tr><td>{name}</td><td><details><summary>View</summary>{image}</details></td></tr>")
+        rows.append(f"<details><summary>📷 {name}</summary>{image}</details>")
     return rows
 
 
@@ -282,18 +287,11 @@ def _screenshots(sample: dict[str, Any]) -> list[str]:
     """The main comment only points at the screenshots: the images themselves go in separate comments
     (render_screenshot_comments), since all of them together exceed Sekoia's playbook argument limit."""
     count = sum(len(_screenshot_rows(a)) for a in sample.get("sample_analyses") or [])
-    if not (count or sample.get("screenshots_truncated")):
+    if not count:
         return []
-    body = []
-    if count:
-        body.append(f"**{count} screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s).")
-    if sample.get("screenshots_truncated"):
-        body += [
-            "",
-            "⚠️ _Some analysis screenshots have been excluded from this report due to size limitations. "
-            "The complete set of screenshots is available on the VMRay platform._",
-        ]
-    return [*_title("Screenshots"), "", *body]
+    return _section(
+        "Screenshots", [f"**{count} screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s)."]
+    )
 
 
 def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
@@ -320,8 +318,6 @@ def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
 
 
 _COMMENT_HEADER_RESERVE = 64  # room for the "## VMRay Screenshots (i/N)" line
-_TABLE_OPEN = "<table><tr><th>Name</th><th>Action</th></tr>"
-_TABLE_CLOSE = "</table>"
 
 
 def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[str]:
@@ -333,13 +329,13 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
     size = 0
     for heading, tiles in _screenshot_groups(report):
         for tile in tiles:
-            group_cost = len(heading) + len(_TABLE_OPEN) + len(_TABLE_CLOSE) + 4
+            group_cost = len(heading) + 2  # heading and the blank line around it
             opens_group = not current or current[-1][0] != heading
-            cost = len(tile) + (group_cost if opens_group else 0)
+            cost = len(tile) + 2 + (group_cost if opens_group else 0)  # each entry is its own HTML block
             if current and size + cost > budget:
                 chunks.append(current)
                 current, size = [], 0
-                opens_group, cost = True, len(tile) + group_cost
+                opens_group, cost = True, len(tile) + 2 + group_cost
             if opens_group:
                 current.append((heading, []))
             current[-1][1].append(tile)
@@ -350,11 +346,7 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
     return [
         "\n".join(
             [f"## VMRay Screenshots ({index}/{len(chunks)})"]
-            + [
-                line
-                for heading, rows in chunk
-                for line in ("", heading, "", _TABLE_OPEN + "".join(rows) + _TABLE_CLOSE)
-            ]
+            + [line for heading, rows in chunk for line in ("", heading, "", "\n\n".join(rows))]
         )
         for index, chunk in enumerate(chunks, start=1)
     ]
@@ -382,10 +374,10 @@ def _child_samples(sample: dict[str, Any]) -> list[str]:
     children = sample.get("sample_child_samples") or []
     if children:
         table = _table(["Verdict", "Sample", "Type", "Children", "Report"], _child_rows(children))
-        return [*_title(f"Child Samples ({len(children)})"), *_toggle(table)]
+        return _section(f"Child Samples ({len(children)})", table)
     if sample.get("sample_child_sample_ids"):
         count = len(sample["sample_child_sample_ids"])
-        return [*_title(f"Child Samples ({count})"), "", "_Not expanded — see the VMRay report._"]
+        return _section(f"Child Samples ({count})", ["_Not expanded — see the VMRay report._"])
     return []
 
 

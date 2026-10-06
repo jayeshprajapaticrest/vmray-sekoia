@@ -198,9 +198,6 @@ class ReportSample(BaseModel):
         default_factory=list, description="Child samples, built the same way, down to max_recursion_depth."
     )
     has_screenshots: bool = Field(default=False, description="Any analysis in sample_analyses carries screenshots.")
-    screenshots_truncated: bool = Field(
-        default=False, description="Some screenshots were left out because the report's screenshot budget ran out."
-    )
     errors: dict[str, str] = Field(
         default_factory=dict, description="Sections of this sample that failed to load; the rest is still filled."
     )
@@ -233,11 +230,6 @@ class BuildReportArguments(BaseModel):
         default="parent_only",
         description="Which samples get their analyses' screenshots embedded: none, only the given (parent) "
         "samples, or every sample including children.",
-    )
-    screenshot_budget_kb: int = Field(
-        default=2048,
-        description="Total size (KB, base64) of embedded screenshots across the whole report. Once reached, the "
-        "remaining screenshots are left out and the sample is marked screenshots_truncated.",
     )
 
 

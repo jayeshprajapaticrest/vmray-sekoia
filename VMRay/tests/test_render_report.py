@@ -68,6 +68,11 @@ def badge(text, color):
     return f'<font color="{color}"><b>{text}</b></font>'
 
 
+def heading(title):
+    """A section heading: the summary of the section's own open toggle."""
+    return f'<details open><summary><b><font size="4">{title}</font></b></summary>'
+
+
 @pytest.fixture
 def content():
     return render_report({"samples": [ROOT]})
@@ -80,12 +85,12 @@ def test_panel_heading_and_uppercase_section_titles(content):
         "DETECTIONS",
         "IOC SUMMARY",
         "VMRAY THREAT IDENTIFIERS",
-        "MITRE ATT&CK",
+        "MITRE ATT&amp;CK",
         "INDICATORS OF COMPROMISE",
         "ANALYSES",
         "CHILD SAMPLES (1)",
     ):
-        assert f"#### {title}" in content
+        assert heading(title) in content
 
 
 def test_overview_is_a_label_value_table_with_coloured_verdict(content):
@@ -108,9 +113,14 @@ def test_ioc_summary_counters(content):
     assert "| **1** | **1** | **1** |" in content
 
 
-def test_threat_identifiers_coloured_scores_in_an_open_toggle(content):
-    section = content[content.index("#### VMRAY THREAT IDENTIFIERS") :]
-    assert section.split("\n")[2] == "<details open><summary>Toggle</summary>"
+def test_section_heading_is_its_own_toggle(content):
+    assert "Toggle" not in content  # no separate Toggle button under the heading
+    assert "####" not in content
+    section = content[content.index(heading("VMRAY THREAT IDENTIFIERS")) :]
+    assert section.split("\n")[2].startswith("| Score |")  # table straight under the heading
+
+
+def test_threat_identifiers_coloured_scores(content):
     assert "| " + badge("5/5", RED) + " | YARA | strong rule | Downloader |" in content
     assert "| " + badge("1/5", GREY) + " | Heuristics | weak rule | — |" in content
     assert content.index("strong rule") < content.index("weak rule")
@@ -118,7 +128,7 @@ def test_threat_identifiers_coloured_scores_in_an_open_toggle(content):
 
 def test_mitre_id_buttons_then_collapsed_details(content):
     link = "[`T1204.002`](https://attack.mitre.org/techniques/T1204/002/)"
-    section = content[content.index("#### MITRE ATT&CK") :]
+    section = content[content.index(heading("MITRE ATT&amp;CK")) :]
     assert section.split("\n")[2] == link  # button row, always visible
     assert "<details><summary>Details</summary>" in section  # collapsed, as in long.html
     assert f"| {link} | Malicious File | Execution |" in section
@@ -142,7 +152,7 @@ def test_child_samples_listed_only(content):
         "[View in VMRay](https://eu.cloud.vmray.com/samples/43) |"
     ) in content
     assert "203.0.113.9" not in content  # no child detail sections
-    assert content.count("#### OVERVIEW") == 1
+    assert content.count(heading("OVERVIEW")) == 1
 
 
 def test_every_toggle_is_closed(content):
@@ -229,7 +239,7 @@ def test_nested_children_are_indented_rows():
 def test_unbuilt_children_are_counted():
     content = render_report({"samples": [{"sample_id": 1, "sample_child_sample_ids": [2, 3]}]})
 
-    assert "#### CHILD SAMPLES (2)" in content
+    assert heading("CHILD SAMPLES (2)") in content
     assert "_Not expanded — see the VMRay report._" in content
 
 
@@ -257,12 +267,11 @@ def test_bare_urls_and_emails_in_text_do_not_autolink():
 SHOT = "iVBORw0KGgo="
 
 
-def with_screenshots(truncated=False, data=SHOT, name="a.png", count=1):
+def with_screenshots(data=SHOT, name="a.png", count=1):
     return {
         "sample_id": 1,
         "sample_filename": "invoice.pdf",
         "has_screenshots": True,
-        "screenshots_truncated": truncated,
         "sample_analyses": [
             {
                 "analysis_analyzer_name": "vmray",
@@ -277,7 +286,7 @@ def with_screenshots(truncated=False, data=SHOT, name="a.png", count=1):
 def test_main_comment_points_at_screenshots_without_embedding_them():
     content = render_report({"samples": [with_screenshots(count=3)]})
 
-    section = content[content.index("#### SCREENSHOTS") :]
+    section = content[content.index(heading("SCREENSHOTS")) :]
     assert "**3 screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s)." in section
     assert "<img" not in content  # images never go in the main comment
 
@@ -286,13 +295,7 @@ def test_screenshots_pointer_comes_after_analyses_and_before_children():
     sample = with_screenshots() | {"sample_child_samples": [{"sample_id": 2}]}
     content = render_report({"samples": [sample]})
 
-    assert content.index("#### ANALYSES") < content.index("#### SCREENSHOTS") < content.index("#### CHILD SAMPLES")
-
-
-def test_truncated_screenshots_warning():
-    content = render_report({"samples": [with_screenshots(truncated=True)]})
-
-    assert "Some analysis screenshots have been excluded from this report due to size limitations" in content
+    assert content.index(heading("ANALYSES")) < content.index(heading("SCREENSHOTS")) < content.index("CHILD SAMPLES")
 
 
 def test_no_screenshots_no_section_and_no_comments():
@@ -309,10 +312,10 @@ def test_screenshot_comment_tiles_labelled_by_sample_and_analysis():
     assert comments[0].startswith("## VMRay Screenshots (1/1)")
     assert "`invoice.pdf` · **vmray** — Windows 10 64-bit" in comments[0]
     assert (
-        "<table><tr><th>Name</th><th>Action</th></tr>"
-        f'<tr><td>a.png</td><td><details><summary>View</summary><img src="data:image/jpeg;base64,{SHOT}" '
-        'alt="a.png" width="600"></details></td></tr></table>'
+        f'<details><summary>📷 a.png</summary><img src="data:image/jpeg;base64,{SHOT}" '
+        'alt="a.png" width="100%"></details>'
     ) in comments[0]
+    assert "<table" not in comments[0]  # a table cell would shrink the image
     assert "**static**" not in comments[0]  # analyses without screenshots get no heading
 
 
@@ -324,7 +327,7 @@ def test_screenshots_split_so_every_comment_fits():
     assert all(len(c.encode()) <= 32 * 1024 for c in comments)
     assert [c.splitlines()[0] for c in comments] == [f"## VMRay Screenshots ({i}/3)" for i in (1, 2, 3)]
     assert sum(c.count("<img") for c in comments) == 7  # nothing lost
-    assert all(c.count("<table>") == c.count("</table>") for c in comments)  # every split part closes its table
+    assert all(c.count("<details>") == c.count("</details>") for c in comments)  # no entry split across parts
     assert all("`invoice.pdf` · **vmray**" in c for c in comments)  # each part keeps its context
 
 
@@ -353,9 +356,10 @@ def test_action_returns_main_comment_and_screenshot_comments():
     assert len(result["screenshot_comments"]) == 2
 
 
-def test_each_screenshot_is_embedded_once_behind_a_view_toggle():
+def test_each_screenshot_is_embedded_once_behind_its_own_toggle():
     comments = render_screenshot_comments({"samples": [with_screenshots(count=2)]}, 256 * 1024)
 
     assert comments[0].count("<img") == 2  # one image per screenshot, no separate thumbnail copy
-    assert comments[0].count("<details><summary>View</summary>") == 2
+    assert comments[0].count("<details><summary>📷 a.png</summary>") == 2
+    assert "</details>\n\n<details>" in comments[0]  # each entry its own HTML block, one per line
     assert "<details open" not in comments[0]  # collapsed until clicked

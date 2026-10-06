@@ -10,9 +10,10 @@ samples down to `max_recursion_depth`.
 
 Screenshots follow the analyzer's `_fetch_screenshots`: per analysis (newest
 first) read `logs/summary.json` from the analysis archive, fetch each listed
-screenshot, compress it to JPEG and embed it as base64 until one report-wide
-size budget runs out. Sekoia has no attachment API, so embedding is the only way
-a screenshot reaches the alert comment.
+screenshot, compress it to JPEG and embed it as base64. Sekoia has no
+attachment API, so embedding is the only way a screenshot reaches the alert
+comment. Unlike the analyzer there is no report-wide size budget: RenderReport
+splits the screenshots across as many comments as they need.
 
 The report is written to a JSON file on data_path and only its path is returned
 (`report_path`): with screenshots it easily exceeds Sekoia's size limit on action
@@ -29,7 +30,6 @@ import json
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
 from typing import Any
 
 import orjson
@@ -44,7 +44,7 @@ from vmray_modules.models import BuildReportArguments, BuildReportResults, Repor
 _MAX_WORKERS = 4
 
 # Smaller than the analyzer's 1280px / quality 82: a Sekoia comment cannot zoom an
-# image the way TheHive's modal does, and a smaller image fits more of them in the budget.
+# image the way TheHive's modal does, and a smaller image fits more of them in a comment.
 _SCREENSHOT_MAX_WIDTH = 800
 _SCREENSHOT_QUALITY = 75
 
@@ -62,13 +62,6 @@ def run_concurrently(tasks: dict[str, Callable[[], Any]]) -> tuple[dict[str, Any
             except Exception as exc:
                 errors[name] = str(exc)
     return results, errors
-
-
-@dataclass
-class ScreenshotBudget:
-    """Base64 bytes still allowed across the whole report — shared by every sample, as in the analyzer."""
-
-    remaining: int
 
 
 def _compress_screenshot(img_bytes: bytes) -> bytes:
@@ -89,16 +82,13 @@ def _should_fetch_screenshots(mode: str, level: int) -> bool:
     return True
 
 
-def fetch_screenshots(client: VMRayClient, sample: dict[str, Any], budget: ScreenshotBudget) -> None:
+def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> None:
     """Embed each analysis's screenshots into `analysis_screenshots` ([{name, data}]), newest analysis first."""
-    truncated = False
     analyses = sample.get("sample_analyses") or []
     analyses.sort(key=lambda analysis: analysis.get("analysis_created") or "", reverse=True)
 
     for analysis in analyses:
         analysis["analysis_screenshots"] = []
-        if truncated:
-            continue
         analysis_id = analysis.get("analysis_id")
         try:
             summary = json.loads(client.get_analysis_archive_file(analysis_id, "logs/summary.json"))
@@ -113,18 +103,13 @@ def fetch_screenshots(client: VMRayClient, sample: dict[str, Any], budget: Scree
             except (VMRayClientError, RequestException, UnidentifiedImageError, OSError):
                 continue  # one unreadable screenshot must not cost the rest
             b64 = base64.b64encode(img_bytes).decode("ascii")
-            if len(b64) > budget.remaining:
-                truncated = True
-                break
-            budget.remaining -= len(b64)
             analysis["analysis_screenshots"].append({"name": archive_path.removeprefix("screenshots/"), "data": b64})
 
-    sample["screenshots_truncated"] = truncated
     sample["has_screenshots"] = any(a.get("analysis_screenshots") for a in analyses)
 
 
 def build_sample_node(
-    client: VMRayClient, sample: dict[str, Any], level: int, arguments: BuildReportArguments, budget: ScreenshotBudget
+    client: VMRayClient, sample: dict[str, Any], level: int, arguments: BuildReportArguments
 ) -> None:
     sample_id = sample["sample_id"]
     tasks: dict[str, Callable[[], Any]] = {
@@ -140,7 +125,7 @@ def build_sample_node(
     sample.update(results)
 
     if _should_fetch_screenshots(arguments.screenshot_mode, level):
-        fetch_screenshots(client, sample, budget)
+        fetch_screenshots(client, sample)
 
     if arguments.max_recursion_depth > level:
         children = []
@@ -150,7 +135,7 @@ def build_sample_node(
             except VMRayClientError as exc:
                 errors[f"child_sample:{child_id}"] = str(exc)
                 continue
-            build_sample_node(client, child, level + 1, arguments, budget)
+            build_sample_node(client, child, level + 1, arguments)
             children.append(child)
         sample["sample_child_samples"] = children
 
@@ -184,7 +169,6 @@ class BuildReport(VMRayAction):
         else:
             raise MissingActionArgumentError("sample_ids or submission_ids")
 
-        budget = ScreenshotBudget(remaining=arguments.screenshot_budget_kb * 1024)
         samples: list[dict[str, Any]] = []
         for sample_id in dict.fromkeys(i for i in sample_ids if i is not None):
             try:
@@ -192,7 +176,7 @@ class BuildReport(VMRayAction):
             except VMRayClientError as exc:
                 errors[str(sample_id)] = str(exc)
                 continue
-            build_sample_node(self.client, sample, 0, arguments, budget)
+            build_sample_node(self.client, sample, 0, arguments)
             samples.append(sample)
 
         report = Report.model_validate({"samples": samples, "errors": errors})

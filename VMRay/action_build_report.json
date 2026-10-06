@@ -74,12 +74,6 @@
         ],
         "title": "Screenshot Mode",
         "type": "string"
-      },
-      "screenshot_budget_kb": {
-        "default": 2048,
-        "description": "Total size (KB, base64) of embedded screenshots across the whole report. Once reached, the remaining screenshots are left out and the sample is marked screenshots_truncated.",
-        "title": "Screenshot Budget Kb",
-        "type": "integer"
       }
     },
     "title": "BuildReportArguments",

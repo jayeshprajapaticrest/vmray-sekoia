@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-06 - 3.1.0
+
+### Changed
+
+- `RenderReport` — each section heading is its own toggle (open by default), replacing the separate Toggle button under it.
+- `RenderReport` — screenshots listed one per line instead of in a table, each opening at the comment's full width.
+- `BuildReport` — every screenshot is embedded; `RenderReport` spreads them over as many comments as needed.
+
+### Removed
+
+- `BuildReport` — `screenshot_budget_kb` argument and the sample's `screenshots_truncated` field.
+- `RenderReport` — the "some screenshots have been excluded" notice.
+
 ## 2026-10-05 - 3.0.0
 
 ### Added

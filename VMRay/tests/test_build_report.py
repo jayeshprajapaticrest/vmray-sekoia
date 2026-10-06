@@ -268,7 +268,6 @@ def test_screenshots_are_embedded_as_compressed_jpeg_newest_analysis_first(reque
     sample = build({"sample_ids": [42]})["samples"][0]
 
     assert sample["has_screenshots"] is True
-    assert sample["screenshots_truncated"] is False
     newest, older = sample["sample_analyses"]
     assert newest["analysis_id"] == 2  # sorted newest first, as in the analyzer
     shot = newest["analysis_screenshots"][0]
@@ -280,16 +279,15 @@ def test_screenshots_are_embedded_as_compressed_jpeg_newest_analysis_first(reque
     assert older["analysis_screenshots"][0]["name"] == "a.png"
 
 
-def test_budget_truncates_and_skips_the_rest(requests_mock):
+def test_every_screenshot_is_embedded_no_size_cap(requests_mock):
     shots = {f"s{i}.png": png(800, 600, (i * 20, 90, 200)) for i in range(5)}
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1, "analysis_created": "x"}], {1: shots})
 
-    sample = build({"sample_ids": [42], "screenshot_budget_kb": 12})["samples"][0]
+    sample = build({"sample_ids": [42]})["samples"][0]
 
     kept = sample["sample_analyses"][0]["analysis_screenshots"]
-    assert sample["screenshots_truncated"] is True
-    assert 0 < len(kept) < 5
-    assert sum(len(s["data"]) for s in kept) <= 12 * 1024
+    assert [s["name"] for s in kept] == [f"s{i}.png" for i in range(5)]
+    assert "screenshots_truncated" not in sample
 
 
 def test_screenshot_mode_none_fetches_nothing(requests_mock):
