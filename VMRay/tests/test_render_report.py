@@ -352,7 +352,7 @@ def test_main_comment_points_at_screenshots_without_embedding_them():
     content = render_report({"samples": [with_screenshots(count=3)]})
 
     section = content[content.index(heading("Screenshots")) :]
-    assert "**3 screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s)." in section
+    assert "**3 screenshot(s)** - posted in the separate _VMRay Screenshots_ comment(s)." in section
     assert live_images(content) == 0  # screenshots never go in the main comment
 
 

@@ -2,6 +2,8 @@
 
 VMRay Platform — agentless hypervisor-based sandbox for malware detonation, VTI scoring and IOC extraction.
 
+This module lets a Sekoia.io playbook look up file hashes in VMRay or detonate URLs, build the full VMRay report, post it on the alert as a comment (with screenshots), and push the indicators it found to a Sekoia IOC collection. The report flow mirrors the Cortex-Analyzers VMRay analyzer and its TheHive template (`VMRay_4_1/long.html`).
+
 ## Configuration
 
 | Field | Required | Notes |
@@ -12,40 +14,170 @@ VMRay Platform — agentless hypervisor-based sandbox for malware detonation, VT
 
 Requires VMRay Platform **2026.2 or later** (recursive threat-name/classification data is silently absent on older versions). `SubmitUrlSample` is not available on the DeepResponse product plan — VMRay's own API rejects submission there regardless of this module.
 
+## How it works
+
+```
+hashes ──► GetSamplesByHash ──► sample_ids ─────┐
+                                                ├─► BuildReport ──► report_path ─┬─► RenderReport ──► comment + screenshot comments
+URL ─────► SubmitUrlSample ───► submission_ids ─┘   (file on data_path)          └─► ReportToIndicators ──► IOC collection
+```
+
+1. **Find or create samples.** `GetSamplesByHash` looks hashes up in VMRay's existing analyses (no quota). `SubmitUrlSample` detonates a URL and waits for the result (consumes quota).
+2. **Build the report.** `BuildReport` fetches everything VMRay knows about each sample and writes the report to a JSON file on the playbook's data path. Only the file's path travels between nodes: a report with screenshots is far larger than Sekoia accepts as an action argument (SYM216).
+3. **Use the report.** `RenderReport` turns it into the alert comment; `ReportToIndicators` turns it into indicators for an IOC collection. Neither calls VMRay or Sekoia.
+
 ## Actions
 
-The report flow mirrors the Cortex-Analyzers VMRay analyzer: find or create samples, build the full report, then render it and extract indicators.
+### `GetSamplesByHash` — Get samples by hash
 
-| Action | Purpose |
+Looks up SHA256, SHA1 or MD5 hashes in VMRay's existing analyses and returns every matching sample. Costs no quota.
+
+| Argument | Default | Notes |
+|---|---|---|
+| `hashes` | required | list of hashes; duplicates ignored |
+
+**Outputs:** `found` (at least one sample) / `not_found` (none). **Results:** `sample_ids`, `samples`, `not_found` (hashes VMRay has never analysed), `errors` (per hash: invalid value or lookup failure).
+
+### `SubmitUrlSample` — Submit URL sample
+
+Submits a URL and polls every resulting submission until it finishes.
+
+| Argument | Default | Notes |
+|---|---|---|
+| `sample_url` | required | the URL to detonate |
+| `reanalyze` | `true` | force a fresh analysis even if VMRay already knows the URL |
+| `tags` | `["sekoia"]` | tags on the VMRay submission, for an audit trail on the VMRay side |
+| `timeout` | `1800` | seconds to wait for every submission to finish |
+| `query_retry_wait` | `10` | seconds between polls |
+| `shareable` | `false` | share the sample's hash with VirusTotal — always sent, off unless enabled |
+| `analyzer_mode`, `max_jobs`, `max_recursive_samples`, `net_scheme_name`, `analysis_timeout`, `enable_reputation`, `enable_whois`, `known_malicious`, `known_benign`, `archive_action`, `archive_password` | unset | VMRay submission options; unset ones fall back to the VMRay user's analyzer settings |
+
+**Outputs:** `completed` / `timed_out` / `submission_failed`. **Results:** `submission_ids`, `sample_ids`, `submissions`, `pending_submission_ids` (still running at the timeout), `errors` (VMRay's reasons for a rejected submission).
+
+### `BuildReport` — Build report
+
+The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_ids` (from `SubmitUrlSample`, each resolved to its sample); `sample_ids` wins when both are given. Per sample it fetches, concurrently: the analyses of the latest submission, VTIs, MITRE ATT&CK techniques, IOCs, classifications and threat names — then the screenshots of each analysis, then the same for child samples.
+
+| Argument | Default | Notes |
+|---|---|---|
+| `sample_ids` / `submission_ids` | one required | |
+| `max_recursion_depth` | `1` | levels of child samples that get a full report: `0` = only the given samples |
+| `screenshot_mode` | `parent_only` | `none`, `parent_only` (the given samples) or `all` (child samples too) |
+| `ioc_severity_filter` | empty | `malicious` or `suspicious` to fetch only IOCs of that severity |
+| `analysis_verdict_filter` | empty | keep only analyses with one of these verdicts |
+
+Screenshots are read from each analysis archive (`logs/summary.json`), scaled to at most 800 px wide and re-encoded as JPEG, then embedded as base64 — Sekoia has no attachment API, so this is the only way they reach the alert. Every screenshot is kept.
+
+A failing section lands in that sample's `errors` and every other section is still filled; a sample or submission that cannot be fetched at all lands in the report's `errors`.
+
+**Results:** `report_path` (give it to `RenderReport` and `ReportToIndicators`), `sample_ids`, `errors`.
+
+### `RenderReport` — Render report
+
+Turns a report into the alert comment, laid out like the VMRay TheHive report.
+
+| Argument | Default | Notes |
+|---|---|---|
+| `report_path` (or `report`) | required | Build report's `report_path` |
+| `max_comment_kb` | `256` | maximum size of each screenshot comment |
+
+**Results:**
+
+- `content` — the main comment, for Comment Alert. Per sample, each section is a collapsible block, open by default, whose heading is the toggle:
+
+  | Section | Contents |
+  |---|---|
+  | Overview | verdict, VTI score, reason, URL or filename, type, created, MD5/SHA1/SHA256, link to the VMRay report |
+  | Detections | threat names and classifications |
+  | IOC Summary | count per IOC type |
+  | VMRay Threat Identifiers | VTIs, strongest first, with a coloured 1–5 score |
+  | MITRE ATT&CK | technique links, plus a collapsed Details table (technique, tactics) |
+  | Indicators of Compromise | every IOC with its type and verdict |
+  | Analyses | each VM run, newest first, with its verdict |
+  | Screenshots | how many screenshots were posted in the screenshot comments |
+  | Child Samples | a collapsible tree: one row per child sample (verdict, name, type, children, link), children indented under their parent |
+
+  Tables are capped at 20 rows ("…and N more"); the VMRay report link has the rest. When several samples are reported, each starts with "Sample i of N". A section that failed to load is named in a "Partial data" note.
+
+- `screenshot_comments` — the screenshots, grouped per analysis, each behind its own toggle that opens the image at the comment's full width. Split into as many comments as needed, each at most `max_comment_kb` and titled "VMRay Screenshots (i/N)"; post them with a Foreach. Sekoia rejects a playbook action argument above an undocumented size (SYM216), and Comment Alert only takes inline text, so one comment cannot hold them all.
+
+Every value that comes from the analysed sample (filenames, URLs, IOC values, rule text) is escaped, so a crafted sample cannot inject links, remote images or markup into the comment.
+
+### `ReportToIndicators` — Report to indicator list
+
+Turns a report into indicators for Sekoia's "Add IOC to IOC Collection" action.
+
+| Argument | Default | Notes |
+|---|---|---|
+| `report_path` (or `report`) | required | Build report's `report_path` |
+| `verdicts` | `["malicious"]` | only samples with one of these verdicts contribute; each child sample is judged on its own verdict. Empty = every sample |
+| `include_child_samples` | `true` | also take the child samples' IOCs, and each child sample's own SHA256 |
+
+**Results:** `indicators` (`[{value, type}]`, deduplicated) and `indicator_groups` — the same values grouped by type, one entry per non-empty type (`[{type, indicators}]`). "Add IOC to IOC Collection" takes one `indicator_type` per call, so a Foreach over `indicator_groups` pushes every type with one node.
+
+| VMRay IOC | Pushed as |
 |---|---|
-| `GetSamplesByHash` | Look up SHA256/SHA1/MD5 hashes (a list; duplicates ignored) in VMRay's existing analyses and return every matching sample. Zero quota. `found` / `not_found` outputs. |
-| `SubmitUrlSample` | Submit a URL and wait until every resulting submission finishes (`timeout`, default 30 min). Accepts VMRay's submission options (`analyzer_mode`, `max_jobs`, `net_scheme_name`, `analysis_timeout`, …); unset ones fall back to the VMRay user's analyzer settings, and `shareable` (hash → VirusTotal) is always sent, default `false`. `completed` / `timed_out` / `submission_failed` outputs. |
-| `BuildReport` | The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_ids` (from `SubmitUrlSample`, each resolved to its sample) and, per sample, fetches analyses of the latest submission, VTIs, MITRE ATT&CK, IOCs, classifications and threat names — then the same for child samples down to `max_recursion_depth` (default 1). A failing section lands in that sample's `errors`; the rest is still filled. |
-| `RenderReport` | Pure transform — a report into one markdown alert comment: every sample, its VTIs (strongest first, with scores), IOCs, MITRE ATT&CK, analyses and a line per child sample. |
-| `ReportToIndicators` | Pure transform — a report into Sekoia's flat, typed indicator list for `add_ioc_to_ioc_collection`. Only `malicious` samples contribute by default, each child judged on its own verdict; child samples also add their own SHA256. Also returns `indicator_groups` — the same list grouped by type, one entry per non-empty type, for a Foreach that pushes every type with one `add_ioc_to_ioc_collection` node. |
+| IPs | `IP address` |
+| domains | `domain` |
+| URLs | `url` |
+| emails, email addresses | `email` |
+| files | `hash` — the strongest of `sha256_hash`, `sha1_hash`, `md5_hash` per file |
+| processes, mutexes, registry keys, filenames | not pushed — Sekoia's IOC collection has no matching type. They still appear in the comment |
+
+## Playbooks
+
+### `playbooks/VMRay_Manual_Report.json` — VMRay: Report on demand
+
+Manual Trigger, run by an analyst on one alert.
+
+1. Gets the alert and up to 100 of its events.
+2. From the **first event**, extracts the file hashes (`file.hash.*` and `process.hash.*`: sha256, sha1, md5) and the http(s) `url.original`.
+3. Runs two branches in parallel:
+   - **Hash branch:** `GetSamplesByHash` → `BuildReport` → `RenderReport` → Comment Alert, then the screenshot comments and the IOC push. When VMRay knows none of the hashes, a comment lists them instead (no quota spent).
+   - **URL branch:** `SubmitUrlSample` → the same chain. When the detonation times out or is rejected, a comment says so and lists any submissions still running.
+4. When the event has neither a hash nor a URL, a comment says which fields were checked.
+
+Each Foreach (screenshot comments, IOC types) sits behind a condition that skips it when its list is empty — Sekoia rejects a Foreach over an empty list ("Foreach input is not a list").
+
+**Before use:** replace `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes.
+
+### `playbooks/VMRay_Report_Per_Event.json` — experimental
+
+Loops over the alert's events and runs the same workflow per event. **Not usable yet:** Sekoia does not resolve a node inside a Foreach loop from a Foreach nested in it, so the screenshot comments and the IOC push inside the event loop fail or are skipped. See the limitation below.
 
 ## Known limitations
 
-**No screenshots, no file downloads.** Sekoia has no alert/case attachment API (confirmed against its SIC OpenAPI spec), so screenshots and sample files could never be shown on the alert. The module deliberately fetches neither; the `[Full VMRay report]` link in the comment is where an analyst sees them.
+**Comments are styled with HTML Sekoia allows, not CSS.** Sekoia renders comments as GitHub-flavoured markdown and strips `style` attributes and `<style>` blocks. Colours use `<font color>`, collapsible sections use `<details>`, and short table columns keep their width through an invisible spacer image in the header.
+
+**Screenshots are embedded, not attached.** Sekoia has no alert or case attachment API, so screenshots are compressed and embedded as base64 images in their own comments. A sample with many screenshots posts many comments.
+
+**No nested loops inside a loop.** A Foreach inside another Foreach cannot iterate a list produced inside the outer loop — its input arrives empty. This is why the per-event playbook cannot post screenshots or push IOCs.
 
 **URL and hash only — no file submission.** Sekoia alerts don't carry sample bytes, so there is no file-submission action. A hash is looked up; a URL is detonated.
 
 **No indicator-revocation action.** If a `reanalyze` flips a sample's verdict away from `malicious` after its IOCs were already pushed to a Sekoia IOC collection, this module has no way to retract them — `DELETE /v2/inthreat/ioc-collections/{uuid}/indicators/{id}` is a **Sekoia** endpoint, and this module only holds VMRay credentials. That action belongs in the `Sekoia.io` module.
 
-**No STIX bundle output.** Scoped in, then dropped: VMRay's own `iocs/stix` endpoint only emits STIX 2.0, and Sekoia Intelligence's accepted bundle version was never confirmed against a real submission. Child-sample lineage and MITRE ATT&CK render as prose in `RenderReport`'s comment and nowhere else — not queryable, not structured.
+**No STIX bundle output.** Scoped in, then dropped: VMRay's own `iocs/stix` endpoint only emits STIX 2.0, and Sekoia Intelligence's accepted bundle version was never confirmed against a real submission.
 
 **Verdict is data, not a decision.** `sample_verdict` comes back in every report, but nothing in this module writes it to Sekoia's `verdict_uuid`/`custom_status` fields — that's `Sekoia.io`'s `PatchAlert` action, driven by a playbook Condition node. Deliberate: auto-closing an alert on a `clean` verdict can bury a true positive the sandbox simply didn't trigger.
-
-## Playbooks
-
-`playbooks/VMRay_Manual_Report.json` (Manual Trigger). It gets the alert and its events, extracts hashes and URLs, and runs a hash branch (`GetSamplesByHash` → `BuildReport` → `RenderReport` → comment → `ReportToIndicators` → Foreach over `indicator_groups` → IOC collection, one push per IOC type) and a URL branch (`SubmitUrlSample` → the same chain) in parallel. When an alert has both a hash and a URL, both branches run and each posts its own comment. Replace `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes before use.
 
 ## Development
 
 ```
 uv sync
-mise run lint   # ruff check, ruff format --check, mypy
-mise run test   # pytest — fast suite only, well under 1s
+mise run lint     # ruff check, ruff format --check, mypy
+mise run test     # pytest — fast suite only
+mise run format   # ruff fix + format
 ```
+
+Action manifests (`action_*.json`) and `main.py` are generated from the code — never edit them by hand:
+
+```
+uv run sekoia-automation generate-files-from-code .
+```
+
+The generator reorders `main.py`'s imports; revert that file if nothing else in it changed.
+
+Every release adds a dated entry to `CHANGELOG.md` and bumps the version in `manifest.json`, `pyproject.toml` and the project's entry in `uv.lock`.
 
 Three tests are marked `slow` (`pytest -m slow`, ~35s) — they exercise the retry adapter over a real local socket, not `requests_mock`. That's deliberate, not an oversight: `requests_mock` patches the transport at a level that bypasses any `HTTPAdapter` mounted on the session, so it cannot verify retry or `Retry-After` behaviour at all. Run the slow suite before any change to `client.py`'s retry configuration.

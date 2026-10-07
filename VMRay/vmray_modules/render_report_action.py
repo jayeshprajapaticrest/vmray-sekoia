@@ -338,7 +338,7 @@ def _screenshots(sample: dict[str, Any]) -> list[str]:
     if not count:
         return []
     return _section(
-        "Screenshots", [f"**{count} screenshot(s)** — posted in the separate _VMRay Screenshots_ comment(s)."]
+        "Screenshots", [f"**{count} screenshot(s)** - posted in the separate _VMRay Screenshots_ comment(s)."]
     )
 
 

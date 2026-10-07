@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-07 - 3.2.2
+
+### Changed
+
+- README — rewritten: how the actions fit together, each action's arguments and results, the alert comment layout, which IOC types reach an IOC collection, the playbooks, and the development and release steps.
+- `RenderReport` — the Screenshots section's line uses a plain hyphen instead of an em dash.
+
+### Removed
+
+- Known limitation "No screenshots" from the README — screenshots have been embedded in the comment since 2.2.0.
+
 ## 2026-10-06 - 3.2.1
 
 ### Changed
