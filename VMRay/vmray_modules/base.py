@@ -1,4 +1,5 @@
 from functools import cached_property
+from pathlib import PurePosixPath
 from typing import Any
 
 import orjson
@@ -37,15 +38,16 @@ class VMRayAction(Action):
         The report is checked against the report model, so a malformed one fails here with a clear message
         instead of half-way through rendering. `report_path` must stay inside the playbook run's data path."""
         if arguments.report_path:
-            data_path = self.data_path.resolve()
-            path = (data_path / arguments.report_path).resolve()
-            if not path.is_relative_to(data_path):
+            # Checked as text, not by resolving the path: in Sekoia the data path is on S3 (s3path), which
+            # supports neither resolve() nor symlinks — a relative path without ".." cannot leave it.
+            relative = PurePosixPath(arguments.report_path.replace("\\", "/"))
+            if relative.is_absolute() or ".." in relative.parts or not relative.parts:
                 raise ValueError(f"report_path must be a Build report file: {arguments.report_path!r}")
             try:
-                data = orjson.loads(path.read_bytes())
+                data = orjson.loads(self.data_path.joinpath(*relative.parts).read_bytes())
             except FileNotFoundError:
                 raise ValueError(f"No report file at {arguments.report_path!r} — give Build report's report_path")
-            except (OSError, orjson.JSONDecodeError) as exc:
+            except Exception as exc:  # local or S3 storage, each with its own errors
                 raise ValueError(f"The report file {arguments.report_path!r} could not be read: {exc}") from exc
         elif arguments.report:
             data = arguments.report

@@ -564,3 +564,25 @@ def test_report_path_problems_give_a_clear_error(storage, report_path, content, 
 
     with pytest.raises(ValueError, match=message):
         RenderReport().run({"report_path": report_path})
+
+
+def test_report_path_works_on_storage_that_cannot_resolve_paths(requests_mock, storage, monkeypatch):
+    """In Sekoia the data path is an S3Path, whose resolve() raises NotImplementedError."""
+    from pathlib import PosixPath
+
+    from vmray_modules.render_report_action import RenderReport
+
+    class S3LikePath(PosixPath):
+        def resolve(self, strict=False):
+            raise NotImplementedError("resolve is unsupported on S3 service")
+
+        def is_relative_to(self, *other):
+            raise NotImplementedError("unsupported on S3 service")
+
+    mock_full_sample(requests_mock, 42)
+    report_path = make_action().run({"sample_ids": [42]})["report_path"]
+    monkeypatch.setattr(RenderReport, "data_path", property(lambda self: S3LikePath(storage)))
+
+    assert "MALICIOUS" in RenderReport().run({"report_path": report_path})["content"]
+    with pytest.raises(ValueError, match="must be a Build report file"):
+        RenderReport().run({"report_path": "../" + report_path})
