@@ -13,9 +13,6 @@ the same filter. No VMRay or Sekoia call.
 from collections.abc import Iterator
 from typing import Any
 
-import orjson
-from sekoia_automation.exceptions import MissingActionArgumentError
-
 from vmray_modules.base import VMRayAction
 from vmray_modules.models import Indicator, IOCSet
 from vmray_modules.report_models import ExtractIocsArguments, ExtractIocsResults, IndicatorGroup
@@ -143,11 +140,6 @@ class ExtractIocs(VMRayAction):
     results_model = ExtractIocsResults
 
     def run(self, arguments: ExtractIocsArguments) -> ExtractIocsResults:
-        if arguments.report is not None:
-            report = arguments.report
-        elif arguments.report_path:
-            report = orjson.loads(self.data_path.joinpath(arguments.report_path).read_bytes())
-        else:
-            raise MissingActionArgumentError("report")
+        report = self.load_report(arguments)
         indicators = extract_iocs(report, arguments.ioc_severity_filter, arguments.include_child_iocs)
         return ExtractIocsResults(indicators=indicators, indicator_groups=group_indicators(indicators))

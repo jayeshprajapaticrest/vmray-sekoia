@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-09 - 4.0.1
+
+### Fixed
+
+- `RenderReport` / `ExtractIocs` — the report file was ignored when the playbook editor sent an empty inline `report`, so the comment said "No matches found" and no IOC was extracted. `report_path` now takes priority, and an empty `report` counts as not given.
+
 ## 2026-10-09 - 4.0.0
 
 ### Added

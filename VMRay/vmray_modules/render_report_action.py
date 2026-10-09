@@ -33,9 +33,6 @@ import re
 from datetime import datetime
 from typing import Any
 
-import orjson
-from sekoia_automation.exceptions import MissingActionArgumentError
-
 from vmray_modules.base import VMRayAction
 from vmray_modules.report_models import RenderReportArguments, RenderReportResults
 
@@ -493,12 +490,7 @@ class RenderReport(VMRayAction):
     results_model = RenderReportResults
 
     def run(self, arguments: RenderReportArguments) -> RenderReportResults:
-        if arguments.report is not None:
-            report = arguments.report
-        elif arguments.report_path:
-            report = orjson.loads(self.data_path.joinpath(arguments.report_path).read_bytes())
-        else:
-            raise MissingActionArgumentError("report")
+        report = self.load_report(arguments)
         return RenderReportResults(
             content=render_report(report),
             screenshot_comments=render_screenshot_comments(report, arguments.max_comment_kb * 1024),

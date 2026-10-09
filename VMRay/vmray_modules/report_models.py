@@ -21,8 +21,8 @@ class ReportInput(BaseModel):
     report: dict[str, Any] | SkipJsonSchema[None] = Field(
         default=None,
         title="Report (inline)",
-        description="The report itself, instead of Report path. Only for small reports: a report with screenshots "
-        "exceeds Sekoia's size limit on action inputs.",
+        description="The report itself — only used when Report path is empty. Only for small reports: a report "
+        "with screenshots exceeds Sekoia's size limit on action inputs.",
     )
 
 

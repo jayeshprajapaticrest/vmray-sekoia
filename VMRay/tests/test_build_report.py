@@ -392,3 +392,26 @@ def test_report_file_feeds_render_report_and_extract_iocs(requests_mock, storage
     assert "<b>VMRay Report</b>" in RenderReport().run({"report_path": report_path})["content"]
     indicators = ExtractIocs().run({"report_path": report_path})["indicators"]
     assert {"type": "url", "value": "http://evil.example"} in indicators
+
+
+@pytest.mark.parametrize("blank_report", [{}, None])
+def test_report_path_wins_over_a_blank_inline_report(requests_mock, storage, blank_report):
+    """Sekoia's editor sends `{}` for the inline Report input left blank: that must not replace the report file."""
+    from vmray_modules.extract_iocs_action import ExtractIocs
+    from vmray_modules.render_report_action import RenderReport
+
+    mock_full_sample(requests_mock, 42)
+    report_path = make_action().run({"sample_ids": [42]})["report_path"]
+    arguments = {"report_path": report_path, "report": blank_report}
+
+    content = RenderReport().run(arguments)["content"]
+    assert "No matches found" not in content
+    assert "MALICIOUS" in content
+    assert {"type": "url", "value": "http://evil.example"} in ExtractIocs().run(arguments)["indicators"]
+
+
+def test_a_blank_inline_report_alone_is_missing():
+    from vmray_modules.render_report_action import RenderReport
+
+    with pytest.raises(MissingActionArgumentError):
+        RenderReport().run({"report": {}})

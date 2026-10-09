@@ -12,7 +12,7 @@
       },
       "report": {
         "additionalProperties": true,
-        "description": "The report itself, instead of Report path. Only for small reports: a report with screenshots exceeds Sekoia's size limit on action inputs.",
+        "description": "The report itself \u2014 only used when Report path is empty. Only for small reports: a report with screenshots exceeds Sekoia's size limit on action inputs.",
         "title": "Report (inline)",
         "type": "object"
       },
