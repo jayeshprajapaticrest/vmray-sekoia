@@ -1,6 +1,8 @@
 import json
 from urllib.parse import parse_qs
 
+import pytest
+
 from vmray_modules.models import VMRayConfiguration, VMRayModule
 from vmray_modules.submit_url_sample_action import SubmitUrlSample
 
@@ -127,3 +129,108 @@ def test_sends_the_analyzer_defaults(requests_mock):
     assert form["max_recursive_samples"] == ["10"]
     assert not {"archive_password", "archive_action"} & set(form)
     assert not {"analyzer_mode", "max_jobs", "enable_reputation", "user_config"} & set(form)  # unset: not sent
+
+
+# -- review findings ------------------------------------------------------------------------------------
+
+
+def test_submission_refused_with_an_http_error_takes_submission_failed(requests_mock):
+    requests_mock.post(f"{BASE_URL}/rest/sample/submit", status_code=400, json={"error_msg": "invalid URL"})
+    action = make_action()
+
+    result = action.run({"sample_url": URL})
+
+    assert action.outputs == {"submission_failed": True}
+    assert "invalid URL" in result["errors"][0]["error_msg"]
+
+
+def test_a_transient_poll_error_does_not_lose_the_run(requests_mock):
+    mock_submit(requests_mock, [111])
+    requests_mock.get(
+        f"{BASE_URL}/rest/submission/111",
+        [{"status_code": 404, "json": {"error_msg": "glitch"}}, finished(111, 222)],
+    )
+    action = make_action()
+
+    result = action.run({"sample_url": URL, "query_retry_wait": 0.01})
+
+    assert action.outputs == {"completed": True}
+    assert result["sample_ids"] == [222]
+
+
+def test_a_submission_that_keeps_failing_is_given_up_and_the_others_kept(requests_mock):
+    mock_submit(requests_mock, [111, 112])
+    requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222)])
+    requests_mock.get(f"{BASE_URL}/rest/submission/112", status_code=404, json={"error_msg": "gone"})
+    action = make_action()
+
+    result = action.run({"sample_url": URL, "query_retry_wait": 0.01})
+
+    assert action.outputs == {"completed": True}
+    assert result["sample_ids"] == [222]
+    assert result["failed_submission_ids"] == [112]
+
+
+def test_submissions_finished_with_errors_take_submission_failed(requests_mock):
+    mock_submit(requests_mock, [111])
+    requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222, submission_has_errors=True)])
+    action = make_action()
+
+    result = action.run({"sample_url": URL, "query_retry_wait": 0.01})
+
+    assert action.outputs == {"submission_failed": True}
+    assert result["sample_ids"] == [] and result["failed_submission_ids"] == [111]
+
+
+def test_rejection_reasons_with_empty_fields_are_kept(requests_mock):
+    mock_submit(requests_mock, [], errors=[{"submission_filename": None, "error_msg": "bad", "code": 3}])
+    action = make_action()
+
+    result = action.run({"sample_url": URL})
+
+    assert action.outputs == {"submission_failed": True}
+    assert result["errors"][0]["error_msg"] == "bad"
+
+
+def test_duplicate_submission_ids_are_followed_once(requests_mock):
+    mock_submit(requests_mock, [111, 111])
+    poll = requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222)])
+
+    result = make_action().run({"sample_url": URL})
+
+    assert result["submission_ids"] == [111]
+    assert poll.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"query_retry_wait": 0},
+        {"query_retry_wait": -1},
+        {"timeout": -5},
+        {"timeout": float("nan")},
+        {"sample_url": "   "},
+        {"max_recursive_samples": -1},
+        {"max_recursive_samples": 11},
+    ],
+)
+def test_invalid_timing_and_url_inputs_are_refused_before_submitting(requests_mock, arguments):
+    from pydantic import ValidationError
+
+    submit = mock_submit(requests_mock, [111])
+
+    with pytest.raises(ValidationError):
+        make_action().run({"sample_url": URL, **arguments})
+    assert submit.call_count == 0
+
+
+def test_only_documented_fields_are_sent_and_tags_are_cleaned(requests_mock):
+    submit = mock_submit(requests_mock, [111])
+    requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222)])
+
+    make_action().run({"sample_url": f"  {URL}  ", "tags": ["", " alert-1 ", "sekoia"]})
+
+    form = parse_qs(submit.last_request.text)
+    assert "analysis_caching" not in form  # left to the VMRay user's own setting
+    assert form["tags"] == ["alert-1,sekoia"]
+    assert form["sample_url"] == [URL]

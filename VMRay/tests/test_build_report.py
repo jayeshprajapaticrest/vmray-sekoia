@@ -415,3 +415,152 @@ def test_a_blank_inline_report_alone_is_missing():
 
     with pytest.raises(MissingActionArgumentError):
         RenderReport().run({"report": {}})
+
+
+# -- robustness: odd VMRay data must cost one section, screenshot or sample — never the whole report --------
+
+
+@pytest.mark.parametrize(
+    "summary", [b"[]", b"null", b'{"screenshots": "x"}', b'{"screenshots": ["screenshots/a.png"]}']
+)
+def test_malformed_screenshot_summary_is_skipped(requests_mock, summary):
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {})
+    requests_mock.get(f"{BASE_URL}/rest/analysis/1/archive/logs/summary.json", content=summary)
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["has_screenshots"] is False
+
+
+def test_unusable_images_are_skipped_and_the_rest_kept(requests_mock):
+    shots = {"thin.png": png(1000, 1), "ok.png": png(100, 60)}
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: shots})
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    names = [s["name"] for s in sample["sample_analyses"][0]["analysis_screenshots"]]
+    assert "ok.png" in names  # a 1000x1 image no longer shrinks to 0 px and crashes
+
+
+def test_oversized_image_is_skipped_before_decoding(requests_mock, monkeypatch):
+    from vmray_modules import build_report_action
+
+    monkeypatch.setattr(build_report_action, "_SCREENSHOT_MAX_PIXELS", 100 * 60 - 1)
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"big.png": png(100, 60)}})
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["has_screenshots"] is False
+
+
+def test_network_failure_on_one_sample_keeps_the_others(requests_mock):
+    import requests
+
+    mock_full_sample(requests_mock, 42)
+    requests_mock.get(f"{BASE_URL}/rest/sample/41", exc=requests.ConnectionError("connection reset"))
+
+    result = build({"sample_ids": [41, 42]})
+
+    assert [s["sample_id"] for s in result["samples"]] == [42]
+    assert "ConnectionError" in result["errors"]["41"]
+
+
+def test_non_json_answer_for_a_child_is_recorded_on_the_parent(requests_mock):
+    mock_full_sample(requests_mock, 42, children=[43])
+    requests_mock.get(f"{BASE_URL}/rest/sample/43", text="<html>proxy error</html>")
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["sample_child_samples"] == []
+    assert "child_sample:43" in sample["errors"]
+
+
+def test_null_threat_names_from_vmray_do_not_fail_the_report(requests_mock):
+    mock_full_sample(requests_mock, 42)
+    requests_mock.get(
+        f"{BASE_URL}/rest/sample/42",
+        json=ok({"sample_id": 42, "sample_threat_names": None, "sample_classifications": None}),
+    )
+    requests_mock.get(f"{BASE_URL}/rest/sample/42/threat_names", status_code=500, json={"error_msg": "boom"})
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["sample_threat_names"] == []
+    assert "sample_threat_names" in sample["errors"]
+
+
+def test_section_of_the_wrong_shape_lands_in_errors(requests_mock):
+    mock_full_sample(requests_mock, 42)
+    requests_mock.get(f"{BASE_URL}/rest/sample/42/iocs", json={"result": "ok"})  # ok, but no data
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["sample_iocs"] == {}
+    assert "sample_iocs" in sample["errors"]
+    assert sample["sample_mitre_attack"]["mitre_attack_techniques"]  # the other sections are still filled
+
+
+def test_a_child_pointing_back_up_the_tree_is_not_built_again(requests_mock):
+    mock_full_sample(requests_mock, 42, children=[43])
+    mock_full_sample(requests_mock, 43, children=[42, 43])  # VMRay data pointing back at parent and itself
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    child = sample["sample_child_samples"][0]
+    assert child["sample_child_samples"] == []
+    assert set(child["errors"]) == {"child_sample:42", "child_sample:43"}
+    assert len([r for r in requests_mock.request_history if r.path == "/rest/sample/42"]) == 1
+
+
+def test_recursion_depth_is_bounded():
+    from pydantic import ValidationError
+
+    from vmray_modules.models import BuildReportArguments
+
+    with pytest.raises(ValidationError):
+        BuildReportArguments(sample_ids=[1], max_recursion_depth=11)
+    assert BuildReportArguments(sample_ids=[1], max_recursion_depth=10).max_recursion_depth == 10
+
+
+def test_submission_without_a_sample_is_reported(requests_mock):
+    requests_mock.get(f"{BASE_URL}/rest/submission/110", json=ok({"submission_id": 110, "submission_finished": False}))
+
+    result = build({"submission_ids": [110]})
+
+    assert result["samples"] == []
+    assert result["errors"] == {"submission:110": "VMRay returned no sample for this submission"}
+
+
+def test_one_odd_sample_does_not_cost_the_others(requests_mock):
+    mock_full_sample(requests_mock, 42)
+    mock_full_sample(requests_mock, 41)
+    requests_mock.get(f"{BASE_URL}/rest/sample/41", json=ok({"sample_id": 41, "sample_vti_score": "high"}))
+
+    result = build({"sample_ids": [41, 42]})
+
+    assert [s["sample_id"] for s in result["samples"]] == [42]
+    assert "41" in result["errors"]
+
+
+# -- load_report: the report file Render report and Extract IOCs read ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "report_path,content,message",
+    [
+        ("../outside.json", None, "must be a Build report file"),
+        ("/etc/hostname", None, "must be a Build report file"),
+        ("missing.json", None, "No report file"),
+        ("broken.json", b"not json", "could not be read"),
+        ("list.json", b"[1, 2]", "Not a Build report result"),
+    ],
+)
+def test_report_path_problems_give_a_clear_error(storage, report_path, content, message):
+    from vmray_modules.render_report_action import RenderReport
+
+    if content is not None:
+        (Path(storage) / report_path).write_bytes(content)
+    (Path(storage).parent / "outside.json").write_text('{"samples": []}')
+
+    with pytest.raises(ValueError, match=message):
+        RenderReport().run({"report_path": report_path})

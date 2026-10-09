@@ -21,9 +21,10 @@ Platform REST API OpenAPI spec, v2026.2.1 (spikes/specs/vmray-openapi-2026.2.1.j
 in the design repo) — see the design doc's "VMRay API surface" table.
 """
 
+import re
 from typing import Any
 
-from requests import Response, sessions
+from requests import RequestException, Response, sessions
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -33,6 +34,13 @@ DEFAULT_USER_AGENT = "Sekoia-VMRay-Module"
 # respect_retry_after_header; 5xx get capped exponential backoff instead.
 _RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
 _RETRY_TOTAL = 5
+# Only these are retried on an error status: retrying POST /sample/submit after a 502 could submit (and bill)
+# the same URL twice if VMRay had accepted the first one. A POST is still retried on a failed connection.
+_RETRY_METHODS = frozenset(["GET", "HEAD"])
+_RETRY_AFTER_MAX = 120  # seconds — a Retry-After of hours would stall the playbook run
+_BACKOFF_MAX = 30
+# (connect, read) seconds: without a timeout a stalled connection hangs the action for good
+_TIMEOUT = (10, 120)
 
 
 class VMRayClientError(Exception):
@@ -53,20 +61,35 @@ class BadResponseError(VMRayClientError):
         self.status_code = status_code
 
 
+class VMRayConnectionError(VMRayClientError):
+    """VMRay could not be reached, or did not answer in time, after the transport-level retries."""
+
+
 class UnknownHashTypeError(VMRayClientError):
-    """A hash string's length matches none of md5 (32), sha1 (40) or
-    sha256 (64) hex characters."""
+    """A value that is not an md5 (32), sha1 (40) or sha256 (64) hex hash."""
+
+
+_HASH_TYPES = {32: "md5", 40: "sha1", 64: "sha256"}
+_HEX = re.compile(r"[0-9a-fA-F]+")
 
 
 def _hash_type(value: str) -> str:
-    length = len(value)
-    if length == 32:
-        return "md5"
-    if length == 40:
-        return "sha1"
-    if length == 64:
-        return "sha256"
-    raise UnknownHashTypeError(f"'{value}' is not a valid md5/sha1/sha256 hex hash ({length} chars).")
+    """The hash type of a hex hash. Anything else is refused before it reaches the URL path."""
+    if len(value) in _HASH_TYPES and _HEX.fullmatch(value):
+        return _HASH_TYPES[len(value)]
+    raise UnknownHashTypeError(f"'{value}' is not a valid md5/sha1/sha256 hex hash.")
+
+
+class _VMRaySession(sessions.Session):
+    """Every request gets a timeout, and a network failure (after the retries) is raised as a
+    VMRayClientError like every other error of this client, so callers catch one exception type."""
+
+    def request(self, method, url, *args, **kwargs):  # type: ignore[no-untyped-def,override]
+        kwargs.setdefault("timeout", _TIMEOUT)
+        try:
+            return super().request(method, url, *args, **kwargs)
+        except RequestException as exc:
+            raise VMRayConnectionError(f"VMRay could not be reached: {type(exc).__name__}: {exc}") from exc
 
 
 def _drop_none(data: dict[str, Any]) -> dict[str, Any]:
@@ -109,8 +132,9 @@ class VMRayClient:
         verify_ssl: bool = True,
         user_agent_suffix: str | None = None,
     ):
-        self.base_url = base_url.rstrip("/")
-        self.session = sessions.Session()
+        # the OpenAPI spec's server URL ends in /rest; the endpoint paths below already carry it
+        self.base_url = base_url.rstrip("/").removesuffix("/rest")
+        self.session = _VMRaySession()
         user_agent = DEFAULT_USER_AGENT + (f" ({user_agent_suffix})" if user_agent_suffix else "")
         self.session.headers.update(
             {
@@ -133,9 +157,11 @@ class VMRayClient:
             read=_RETRY_TOTAL,
             status=_RETRY_TOTAL,
             status_forcelist=_RETRY_STATUS_CODES,
-            allowed_methods=frozenset(["GET", "HEAD", "POST", "DELETE"]),
+            allowed_methods=_RETRY_METHODS,
             backoff_factor=1,
+            backoff_max=_BACKOFF_MAX,
             respect_retry_after_header=True,
+            retry_after_max=_RETRY_AFTER_MAX,
             raise_on_status=False,
         )
         adapter = HTTPAdapter(max_retries=retry)
@@ -161,26 +187,31 @@ class VMRayClient:
         """Layers 2+3: HTTP status, then the body envelope (`result` field,
         checked even on a 200), then continuation-id pagination, drained
         immediately since a continuation id is single-shot per the API docs."""
-        self._raise_for_status(res)
-        body = res.json()
-
-        if body.get("result") != "ok":
-            # Layer 2 — a 2xx whose envelope still reports an error.
-            error_msg = body.get("error_msg", "VMRay API returned an unspecified error.")
-            raise VMRayAPIError(error_msg)
-
+        body = self._body(res)
         data = body.get("data", [])
         continuation_id = body.get("continuation_id")
-        while continuation_id:
-            res = self.session.get(self._url(self._continuation.format(continuation_id=continuation_id)))
-            self._raise_for_status(res)
-            body = res.json()
-            if body.get("result") != "ok":
-                raise VMRayAPIError(body.get("error_msg", "VMRay API returned an unspecified error."))
-            data.extend(body.get("data", []))
+        # only a list is paginated; a single object never carries more pages
+        while continuation_id and isinstance(data, list):
+            body = self._body(self.session.get(self._url(self._continuation.format(continuation_id=continuation_id))))
+            more = body.get("data") or []
+            data.extend(more if isinstance(more, list) else [more])
             continuation_id = body.get("continuation_id")
 
         return data
+
+    def _body(self, res: Response) -> dict[str, Any]:
+        """The checked JSON envelope of one response: HTTP status, then a JSON object, then `result`."""
+        self._raise_for_status(res)
+        try:
+            body = res.json()
+        except ValueError as exc:  # e.g. a proxy's HTML page, or base_url pointing at the web UI
+            raise VMRayAPIError(f"VMRay answered with something other than JSON (HTTP {res.status_code})") from exc
+        if not isinstance(body, dict):
+            raise VMRayAPIError("VMRay answered with an unexpected JSON body")
+        if body.get("result") != "ok":
+            # Layer 2 — a 2xx whose envelope still reports an error.
+            raise VMRayAPIError(body.get("error_msg") or "VMRay API returned an unspecified error.")
+        return body
 
     # -- system -----------------------------------------------------------
 
@@ -194,14 +225,15 @@ class VMRayClient:
         sample_url: str,
         tags: list[str] | None = None,
         reanalyze: bool = False,
-        analysis_caching: bool = True,
         **extra_params: Any,
     ) -> dict[str, Any]:
+        # analysis_caching is not sent: it takes 'disabled'/'enabled'/'smart'/'legacy', and left out the VMRay
+        # user's own setting applies — as with the Cortex analyzer, which never sends it either
+        tags = [t.strip() for t in tags or [] if t and t.strip()]
         params = _drop_none(
             {
                 "sample_url": sample_url,
                 "reanalyze": reanalyze,
-                "analysis_caching": analysis_caching,
                 "tags": ",".join(tags) if tags else None,
                 **extra_params,
             }

@@ -48,7 +48,7 @@ Submits a URL and polls every resulting submission until it finishes.
 | `reanalyze` | `true` | re-analyze known samples on submission |
 | `tags` | `["sekoia"]` | tags to attach to the sample |
 | `shareable` | `false` | share the sample's hash with VirusTotal |
-| `max_recursive_samples` | `10` | maximum amount of recursive samples analyzed; `0` disables recursion |
+| `max_recursive_samples` | `10` | maximum amount of recursive samples analyzed, at most 10; `0` disables recursion |
 | `query_retry_wait` | `10` | seconds to wait before trying to fetch the results |
 | `timeout` | `1800` | seconds to wait for every submission to finish, then the `timed_out` branch |
 | `analyzer_mode`, `max_jobs`, `enable_reputation`, `enable_whois`, `known_malicious`, `known_benign`, `analysis_timeout`, `net_scheme_name` | empty | VMRay submission options; empty ones are not sent, so the VMRay user's analyzer settings apply |
@@ -64,7 +64,7 @@ The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_i
 | Argument | Default | Notes |
 |---|---|---|
 | `sample_ids` / `submission_ids` | one required | |
-| `max_recursion_depth` | `10` | maximum depth of child samples analyzed in the report; `0` disables recursion |
+| `max_recursion_depth` | `10` | maximum depth of child samples analyzed in the report, at most 10; `0` disables recursion |
 | `include_screenshots` | `true` | include the screenshots of the submitted URL or looked-up hash — the top-level samples only, never their child samples |
 | `ioc_severity_filter` | empty | list of `malicious` / `suspicious`: exactly one filters server-side; empty or both fetch both severities |
 | `analysis_verdict_filter` | empty | list of `malicious` / `suspicious` / `clean` to include; empty includes all analyses, even those with an unknown verdict (adding all three does not) |

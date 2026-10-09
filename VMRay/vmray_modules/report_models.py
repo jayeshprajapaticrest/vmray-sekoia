@@ -29,6 +29,7 @@ class ReportInput(BaseModel):
 class RenderReportArguments(ReportInput):
     max_comment_kb: int = Field(
         default=512,
+        ge=16,
         title="Max comment size (KB)",
         description="Maximum size of each screenshot comment. Screenshots are split across as many comments as "
         "needed to stay under it — Sekoia rejects larger action inputs (SYM216).",

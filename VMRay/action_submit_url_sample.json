@@ -13,7 +13,9 @@
       },
       "max_recursive_samples": {
         "default": 10,
-        "description": "The maximum amount of recursive samples which will be analyzed. 0 disables recursion.",
+        "description": "The maximum amount of recursive samples which will be analyzed (at most 10). 0 disables recursion.",
+        "maximum": 10,
+        "minimum": 0,
         "title": "Max Recursive Samples",
         "type": "integer"
       },
@@ -59,6 +61,7 @@
       },
       "sample_url": {
         "description": "URL to submit for detonation.",
+        "minLength": 1,
         "title": "Sample Url",
         "type": "string"
       },
@@ -79,12 +82,14 @@
       "query_retry_wait": {
         "default": 10,
         "description": "The amount of seconds to wait before trying to fetch the results.",
+        "exclusiveMinimum": 0,
         "title": "Query Retry Wait",
         "type": "number"
       },
       "timeout": {
         "default": 1800,
         "description": "Maximum time (seconds) to wait for every submission to finish. The analyzer waits forever; this stops and takes the timed_out branch.",
+        "minimum": 0,
         "title": "Timeout",
         "type": "number"
       }
@@ -247,12 +252,18 @@
         "title": "Timed Out",
         "type": "boolean"
       },
-      "errors": {
-        "description": "Errors VMRay returned on submit.",
+      "failed_submission_ids": {
+        "description": "Submissions that finished with an error, or could not be followed.",
         "items": {
-          "additionalProperties": {
-            "type": "string"
-          },
+          "type": "integer"
+        },
+        "title": "Failed Submission Ids",
+        "type": "array"
+      },
+      "errors": {
+        "description": "Errors VMRay returned on submit, and why a submission failed.",
+        "items": {
+          "additionalProperties": true,
           "type": "object"
         },
         "title": "Errors",

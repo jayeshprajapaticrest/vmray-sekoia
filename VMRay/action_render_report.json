@@ -19,6 +19,7 @@
       "max_comment_kb": {
         "default": 512,
         "description": "Maximum size of each screenshot comment. Screenshots are split across as many comments as needed to stay under it \u2014 Sekoia rejects larger action inputs (SYM216).",
+        "minimum": 16,
         "title": "Max comment size (KB)",
         "type": "integer"
       }

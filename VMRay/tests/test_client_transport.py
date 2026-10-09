@@ -85,3 +85,47 @@ def test_verify_ssl_defaults_true():
     client = VMRayClient(base_url=BASE_URL, api_key="x")
 
     assert client.session.verify is True
+
+
+# -- review findings ------------------------------------------------------------------------------------
+
+
+def test_every_request_has_a_timeout(requests_mock):
+    requests_mock.get("https://vmray.example/rest/sample/1", json={"result": "ok", "data": {"sample_id": 1}})
+
+    VMRayClient("https://vmray.example", "k").get_sample(1)
+
+    assert requests_mock.last_request.timeout == (10, 120)
+
+
+def test_network_failure_is_a_client_error(requests_mock):
+    import requests
+
+    from vmray_modules.client import VMRayClientError
+
+    requests_mock.get("https://vmray.example/rest/sample/1", exc=requests.ConnectTimeout("slow"))
+
+    with pytest.raises(VMRayClientError, match="could not be reached"):
+        VMRayClient("https://vmray.example", "k").get_sample(1)
+
+
+@pytest.mark.parametrize("body", ["<html>login</html>", "[1, 2]"])
+def test_a_body_that_is_not_a_json_object_is_an_api_error(requests_mock, body):
+    requests_mock.get("https://vmray.example/rest/sample/1", text=body)
+
+    with pytest.raises(VMRayAPIError):
+        VMRayClient("https://vmray.example", "k").get_sample(1)
+
+
+def test_base_url_given_with_rest_is_not_doubled(requests_mock):
+    requests_mock.get("https://vmray.example/rest/sample/1", json={"result": "ok", "data": {"sample_id": 1}})
+
+    assert VMRayClient("https://vmray.example/rest/", "k").get_sample(1) == {"sample_id": 1}
+
+
+def test_submit_is_not_retried_on_a_server_error():
+    """Retrying a POST after a 502 could submit — and bill — the same URL twice."""
+    retry = VMRayClient("https://vmray.example", "k").session.get_adapter("https://vmray.example").max_retries
+
+    assert "POST" not in retry.allowed_methods
+    assert retry.retry_after_max <= 120 and retry.backoff_max <= 30

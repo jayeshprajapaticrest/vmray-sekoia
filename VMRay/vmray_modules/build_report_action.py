@@ -34,12 +34,13 @@ from typing import Any
 
 import orjson
 from PIL import Image, UnidentifiedImageError
+from pydantic import ValidationError
 from requests import RequestException
 from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.base import VMRayAction
 from vmray_modules.client import VMRayClient, VMRayClientError
-from vmray_modules.models import BuildReportArguments, BuildReportResults, Report
+from vmray_modules.models import BuildReportArguments, BuildReportResults, Report, ReportSample
 
 _MAX_WORKERS = 4
 
@@ -60,15 +61,34 @@ def run_concurrently(tasks: dict[str, Callable[[], Any]]) -> tuple[dict[str, Any
             try:
                 results[name] = future.result()
             except Exception as exc:
-                errors[name] = str(exc)
+                errors[name] = _describe(exc)
     return results, errors
 
 
+def _describe(exc: Exception) -> str:
+    """The error as shown in the report: VMRay's own message, or the exception type when it alone says what
+    went wrong (a bare `str(KeyError('x'))` is just "'x'")."""
+    return str(exc) if isinstance(exc, VMRayClientError) else f"{type(exc).__name__}: {exc}"
+
+
+# Calls that can fail for one sample, section or screenshot without failing the report: VMRay's own errors, the
+# network giving up after its retries, and a 200 response that is not the JSON it should be.
+_RECOVERABLE = (VMRayClientError, RequestException, ValueError)
+
+# A real screenshot is a few megapixels; anything far beyond is a broken or hostile image. Checked before
+# decoding, so such an image is skipped instead of being decoded into memory.
+_SCREENSHOT_MAX_PIXELS = 40_000_000
+
+
 def _compress_screenshot(img_bytes: bytes) -> bytes:
-    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    opened = Image.open(io.BytesIO(img_bytes))  # reads the size only — nothing is decoded yet
+    if opened.width * opened.height > _SCREENSHOT_MAX_PIXELS:
+        raise ValueError(f"screenshot too large: {opened.width}x{opened.height}")
+    img: Image.Image = opened.convert("RGB")
     if img.width > _SCREENSHOT_MAX_WIDTH:
         ratio = _SCREENSHOT_MAX_WIDTH / img.width
-        img = img.resize((_SCREENSHOT_MAX_WIDTH, int(img.height * ratio)), Image.Resampling.LANCZOS)
+        height = max(1, int(img.height * ratio))  # a very wide, thin image must not shrink to 0 px
+        img = img.resize((_SCREENSHOT_MAX_WIDTH, height), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=_SCREENSHOT_QUALITY, optimize=True)
     return buf.getvalue()
@@ -89,15 +109,16 @@ def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> None:
         analysis_id = analysis.get("analysis_id")
         try:
             summary = json.loads(client.get_analysis_archive_file(analysis_id, "logs/summary.json"))
-        except (VMRayClientError, RequestException, ValueError):
+        except _RECOVERABLE:
             continue  # e.g. a static analysis has no screenshots — optional, never fails the report
-        for entry in summary.get("screenshots") or []:
-            archive_path = entry.get("screenshot_archive_path")
-            if not archive_path:
+        entries = summary.get("screenshots") if isinstance(summary, dict) else None
+        for entry in entries if isinstance(entries, list) else []:
+            archive_path = entry.get("screenshot_archive_path") if isinstance(entry, dict) else None
+            if not isinstance(archive_path, str) or not archive_path:
                 continue
             try:
                 img_bytes = _compress_screenshot(client.get_analysis_archive_file(analysis_id, archive_path))
-            except (VMRayClientError, RequestException, UnidentifiedImageError, OSError):
+            except (*_RECOVERABLE, UnidentifiedImageError, OSError, Image.DecompressionBombError):
                 continue  # one unreadable screenshot must not cost the rest
             b64 = base64.b64encode(img_bytes).decode("ascii")
             analysis["analysis_screenshots"].append({"name": archive_path.removeprefix("screenshots/"), "data": b64})
@@ -120,9 +141,26 @@ def analysis_verdicts(values: list[str]) -> list[str]:
     return sorted({v.strip().lower() for v in values if v and v.strip().lower() in _ANALYSIS_VERDICTS})
 
 
+# what each section must be; anything else VMRay sends lands in the sample's errors instead
+_SECTION_TYPES: dict[str, type] = {
+    "sample_analyses": list,
+    "sample_threat_indicators": dict,
+    "sample_mitre_attack": dict,
+    "sample_iocs": dict,
+    "sample_classifications": list,
+    "sample_threat_names": list,
+}
+
+
 def build_sample_node(
-    client: VMRayClient, sample: dict[str, Any], level: int, arguments: BuildReportArguments
+    client: VMRayClient,
+    sample: dict[str, Any],
+    level: int,
+    arguments: BuildReportArguments,
+    ancestors: frozenset[int] = frozenset(),
 ) -> None:
+    """`ancestors` are the sample ids on the path from the top-level sample: a child that is one of them (VMRay
+    data can point back up the tree) is recorded as an error and not built again, so the recursion ends."""
     sample_id = sample["sample_id"]
     verdicts = analysis_verdicts(arguments.analysis_verdict_filter)
     severity = ioc_severity(arguments.ioc_severity_filter)
@@ -136,20 +174,31 @@ def build_sample_node(
     }
     # a failed classifications/threat_names call leaves the sample object's own values in place
     results, errors = run_concurrently(tasks)
-    sample.update(results)
+    for name, value in results.items():
+        if isinstance(value, _SECTION_TYPES[name]):
+            sample[name] = value
+        else:
+            errors[name] = f"unexpected response from VMRay: {type(value).__name__}"
 
     if _should_fetch_screenshots(arguments.include_screenshots, level):
         fetch_screenshots(client, sample)
 
     if arguments.max_recursion_depth > level:
         children = []
-        for child_id in sample.get("sample_child_sample_ids") or []:
+        path = ancestors | {sample_id}
+        for child_id in dict.fromkeys(sample.get("sample_child_sample_ids") or []):
+            if child_id in path:
+                errors[f"child_sample:{child_id}"] = "already a parent of this sample — not built again"
+                continue
             try:
                 child = client.get_sample(child_id)
-            except VMRayClientError as exc:
-                errors[f"child_sample:{child_id}"] = str(exc)
+            except _RECOVERABLE as exc:
+                errors[f"child_sample:{child_id}"] = _describe(exc)
                 continue
-            build_sample_node(client, child, level + 1, arguments)
+            if not isinstance(child, dict) or "sample_id" not in child:
+                errors[f"child_sample:{child_id}"] = "unexpected response from VMRay"
+                continue
+            build_sample_node(client, child, level + 1, arguments, path)
             children.append(child)
         sample["sample_child_samples"] = children
 
@@ -168,9 +217,15 @@ class BuildReport(VMRayAction):
         sample_ids: list[int | None] = []
         for submission_id in dict.fromkeys(submission_ids):
             try:
-                sample_ids.append(self.client.update_submission(submission_id).get("submission_sample_id"))
-            except VMRayClientError as exc:
-                errors[f"submission:{submission_id}"] = str(exc)
+                submission = self.client.update_submission(submission_id)
+            except _RECOVERABLE as exc:
+                errors[f"submission:{submission_id}"] = _describe(exc)
+                continue
+            sample_id = submission.get("submission_sample_id") if isinstance(submission, dict) else None
+            if sample_id is None:
+                errors[f"submission:{submission_id}"] = "VMRay returned no sample for this submission"
+                continue
+            sample_ids.append(sample_id)
         return sample_ids
 
     def run(self, arguments: BuildReportArguments) -> BuildReportResults:
@@ -183,20 +238,33 @@ class BuildReport(VMRayAction):
         else:
             raise MissingActionArgumentError("sample_ids or submission_ids")
 
-        samples: list[dict[str, Any]] = []
+        samples: list[ReportSample] = []
         for sample_id in dict.fromkeys(i for i in sample_ids if i is not None):
             try:
                 sample = self.client.get_sample(sample_id)
-            except VMRayClientError as exc:
-                errors[str(sample_id)] = str(exc)
+            except _RECOVERABLE as exc:
+                errors[str(sample_id)] = _describe(exc)
+                continue
+            if not isinstance(sample, dict) or "sample_id" not in sample:
+                errors[str(sample_id)] = "unexpected response from VMRay"
                 continue
             build_sample_node(self.client, sample, 0, arguments)
-            samples.append(sample)
+            try:  # one sample VMRay describes oddly must not cost the others
+                samples.append(ReportSample.model_validate(sample))
+            except ValidationError as exc:
+                errors[str(sample_id)] = f"unexpected sample data from VMRay: {exc.error_count()} invalid field(s)"
 
-        report = Report.model_validate({"samples": samples, "errors": errors})
+        report = Report(samples=samples, errors=errors)
         filename = f"vmray-report-{uuid.uuid4()}.json"
-        self.data_path.joinpath(filename).write_bytes(orjson.dumps(report.model_dump(mode="json")))
+        self.data_path.joinpath(filename).write_bytes(_dump(report.model_dump(mode="json")))
 
         return BuildReportResults(
             report_path=filename, sample_ids=[s.sample_id for s in report.samples], errors=report.errors
         )
+
+
+def _dump(data: dict[str, Any]) -> bytes:
+    try:
+        return orjson.dumps(data)
+    except TypeError:  # orjson refuses integers beyond 64 bits; VMRay data has none, but must not fail the run
+        return json.dumps(data, default=str).encode()

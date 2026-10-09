@@ -5,7 +5,8 @@ sections, order, columns and colours. Sekoia renders comments as GitHub-flavoure
 markdown with Angular's HTML sanitizer, so the template's visual elements map to:
 coloured labels and score badges -> `<font color>`; section headings and their
 Toggle buttons -> one `<details open>` per section whose summary is the bold
-heading, MITRE's Details button -> a collapsed `<details>`; the overview
+heading, each written on one line of HTML so markdown adds no space around it;
+MITRE's Details button -> a collapsed `<details>`; the overview
 definition list -> a Property | Value table, and detections -> a table of their
 own; every table is HTML, so short columns can be kept from wrapping (`nowrap`)
 and cells aligned (`valign`/`align`) — attributes Sekoia keeps; titles ->
@@ -28,7 +29,9 @@ Field names follow the VMRay OpenAPI spec (v2026.2.1) and the template. No VMRay
 or Sekoia call.
 """
 
+import base64
 import html
+import json
 import re
 from datetime import datetime
 from typing import Any
@@ -72,26 +75,71 @@ _BASE64 = re.compile(r"[A-Za-z0-9+/]+=*")
 # -- escaping ---------------------------------------------------------------
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _one_line(value: Any) -> str:
+    """The value as one line of text. A line break in a value would end the one-line HTML block it sits in and
+    let markdown run on what follows — a crafted file name could then inject a link or a remote image."""
+    return _CONTROL.sub(" ", "" if value is None else str(value))
+
+
 def _text(value: Any) -> str:
-    """Plain text for a markdown table cell: markdown and HTML neutralised, and
-    GFM's bare-URL/email autolinking broken (the escapes still render as the
-    original characters)."""
-    text = str(value).replace("\r", " ").replace("\n", " ")
+    """Plain text for a markdown paragraph: markdown and HTML neutralised, and GFM's bare-URL/email autolinking
+    broken (the escapes still render as the original characters)."""
+    text = _one_line(value)
     for char in _MARKDOWN_SPECIALS:
         text = text.replace(char, "\\" + char)
-    text = text.replace("://", ":\\/\\/").replace("www.", "www\\.").replace("@", "\\@")
+    text = re.sub(r"(?i)(www)\.", r"\1\\.", text.replace("://", ":\\/\\/").replace("@", "\\@"))
     return html.escape(text, quote=False)
 
 
 def _code(value: Any) -> str:
-    """A markdown code span, table-safe. Code spans are rendered literally, so no
-    markdown, HTML, link or image inside the value can take effect."""
-    return "`" + str(value).replace("`", "'").replace("|", "\\|").replace("\r", " ").replace("\n", " ") + "`"
+    """A markdown code span. Code spans are rendered literally, so no markdown, HTML, link or image inside the
+    value can take effect."""
+    return "`" + _one_line(value).replace("`", "'") + "`"
 
 
 def _h(value: Any) -> str:
     """Text for use inside an HTML block (markdown is not parsed there)."""
-    return html.escape(str(value), quote=True)
+    return html.escape(_one_line(value), quote=True)
+
+
+# -- tolerant readers: report fields are VMRay data, and an odd shape must not crash the comment ------------
+
+
+def _str(value: Any) -> str:
+    return "" if value is None else str(value)
+
+
+def _dicts(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _strs(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value else []
+    return [str(item) for item in value if item is not None] if isinstance(value, list) else []
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+_SAFE_LINK = re.compile(r"https?://", re.IGNORECASE)
+
+
+def _link(url: Any, label: str) -> str:
+    """A link to a VMRay page. Only an http(s) URL becomes a link — anything else is never put in an href."""
+    url = _str(url)
+    return f'<a href="{_h(url)}">{_h(label)}</a>' if _SAFE_LINK.match(url) else "—"
 
 
 # -- badges -------------------------------------------------------------------
@@ -101,23 +149,26 @@ def _font(text: str, color: str) -> str:
     return f'<font color="{color}"><b>{_h(text)}</b></font>'
 
 
-def _verdict(verdict: str | None) -> str:
+def _verdict(verdict: Any) -> str:
+    verdict = _str(verdict)
     if not verdict:
         return _font("N/A", _GREY)
     return _font(verdict.upper(), _VERDICT_COLORS.get(verdict.lower(), _GREY))
 
 
-def _score(score: int | None) -> str:
-    if score is None:
+def _score(score: Any) -> str:
+    value = _int(score)
+    if value is None:
         return "—"
-    return _font(f"{score}/5", _SCORE_COLORS.get(score, _GREY))
+    return _font(f"{value}/5", _SCORE_COLORS.get(value, _GREY))
 
 
-def _date(value: str) -> str:
+def _date(value: Any) -> str:
+    text = _str(value)
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M:%S")
     except ValueError:
-        return value
+        return text
 
 
 # -- layout helpers -------------------------------------------------------------
@@ -165,9 +216,10 @@ def _table(
     return ["".join(html)]
 
 
-def _toggle(body: list[str], label: str, expanded: bool = True) -> list[str]:
-    """A collapsible block. The blank lines let markdown (tables) render inside."""
-    return ["", f"<details{' open' if expanded else ''}><summary>{label}</summary>", "", *body, "", "</details>"]
+def _toggle(body: list[str], label: str, expanded: bool = True) -> str:
+    """A collapsible block, on one line of HTML: no blank lines, so markdown adds no paragraphs — and so no
+    extra vertical space — around its content. The content must be HTML."""
+    return f"<details{' open' if expanded else ''}><summary>{label}</summary>{''.join(body)}</details>"
 
 
 def _heading(text: str, size: int) -> str:
@@ -180,7 +232,7 @@ def _section(title: str, body: list[str]) -> list[str]:
     """A long.html section whose heading is its own toggle (open by default) — no separate Toggle button.
     Bold text, not an <h4>: a heading tag inside <summary> pushes the disclosure triangle onto its own
     line, and Sekoia strips the CSS that would fix it."""
-    return [*_toggle(body, label=f"<b>{_h(title)}</b>"), "<br>"]  # Sekoia adds no margin between toggles
+    return [_toggle(body, label=f"<b>{_h(title)}</b>")]
 
 
 def _sample_name(sample: dict[str, Any]) -> str:
@@ -188,15 +240,16 @@ def _sample_name(sample: dict[str, Any]) -> str:
         name = sample.get("sample_url") or sample.get("sample_display_url")
     else:
         name = sample.get("sample_filename")
-    return name or sample.get("sample_sha256hash") or "Sample"
+    return _str(name or sample.get("sample_sha256hash") or "Sample")
 
 
 _TECHNIQUE_ID = re.compile(r"T\d{4}(\.\d{3})?")
 
 
-def _mitre_link(technique_id: str) -> str:
+def _mitre_link(technique_id: Any) -> str:
     """A technique ID linked to attack.mitre.org. An ID not shaped like Txxxx[.yyy] is only shown, never
     put into a URL."""
+    technique_id = _str(technique_id)
     if not _TECHNIQUE_ID.fullmatch(technique_id):
         return _code_html(technique_id)
     return f'<a href="https://attack.mitre.org/techniques/{technique_id.replace(".", "/")}/">{technique_id}</a>'
@@ -223,22 +276,22 @@ def _overview(sample: dict[str, Any]) -> list[str]:
         if sample.get(key):
             rows.append([label, _code_html(sample[key])])
     if sample.get("sample_webif_url"):
-        rows.append(["Report", f'<a href="{_h(sample["sample_webif_url"])}">View in VMRay</a>'])
+        rows.append(["Report", _link(sample["sample_webif_url"], "View in VMRay")])
     table = _table(["Property", "Value"], [[f"<b>{label}</b>", value] for label, value in rows], frozenset({0}))
     return _section("Overview", table)
 
 
 def _detections(sample: dict[str, Any]) -> list[str]:
     rows = [
-        [f"<b>{label}</b>", " ".join(_code_html(v) for v in sample[key])]
+        [f"<b>{label}</b>", " ".join(_code_html(v) for v in _strs(sample.get(key)))]
         for key, label in (("sample_threat_names", "Threat Names"), ("sample_classifications", "Classifications"))
-        if sample.get(key)
+        if _strs(sample.get(key))
     ]
     return _section("Detections", _table(["Detection", "Values"], rows, frozenset({0}))) if rows else []
 
 
 def _ioc_summary(iocs: dict[str, Any]) -> list[str]:
-    present = [(label, len(iocs.get(key) or [])) for key, _value_key, label in _IOC_TYPES if iocs.get(key)]
+    present = [(label, len(_dicts(iocs.get(key)))) for key, _value_key, label in _IOC_TYPES if _dicts(iocs.get(key))]
     if not present:
         return []
     every_column = frozenset(range(len(present)))
@@ -247,7 +300,8 @@ def _ioc_summary(iocs: dict[str, Any]) -> list[str]:
     )
 
 
-def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
+def _threat_indicators(vtis: Any) -> list[str]:
+    vtis = _dicts(vtis)
     if not vtis:
         return []
     rows = [
@@ -255,15 +309,16 @@ def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
             _score(vti.get("score")),
             _h(vti.get("category") or "—"),
             _h(vti.get("operation") or "—"),
-            _h(", ".join(vti.get("classifications") or []) or "—"),
+            _h(", ".join(_strs(vti.get("classifications"))) or "—"),
         ]
-        for vti in sorted(vtis, key=lambda v: v.get("score") or 0, reverse=True)
+        for vti in sorted(vtis, key=lambda v: _int(v.get("score")) or 0, reverse=True)
     ]
     table = _table(["Score", "Category", "Operation", "Classification"], rows, frozenset({0, 1}))
     return _section("VMRay Threat Identifiers", table)
 
 
-def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
+def _mitre(techniques: Any) -> list[str]:
+    techniques = _dicts(techniques)
     if not techniques:
         return []
     ids = [t["technique_id"] for t in techniques if t.get("technique_id")]
@@ -272,26 +327,26 @@ def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
         [
             _mitre_link(t["technique_id"]) if t.get("technique_id") else "—",
             _h(t.get("technique") or "—"),
-            _h(", ".join(t.get("tactics") or []) or "—"),
+            _h(", ".join(_strs(t.get("tactics"))) or "—"),
         ]
         for t in techniques
     ]
     details = _toggle(_table(["ID", "Technique", "Tactics"], rows, frozenset({0})), label="Details", expanded=False)
-    return _section("MITRE ATT&CK", [buttons, *details])
+    return _section("MITRE ATT&CK", [f"<div>{buttons}</div>", details])
 
 
 def _iocs(iocs: dict[str, Any]) -> list[str]:
     rows: list[list[str]] = []
     omitted = 0
     for key, value_key, _label in _IOC_TYPES:
-        items = iocs.get(key) or []
+        items = _dicts(iocs.get(key))
         for item in items[:_MAX_ROWS]:
             value = item.get(value_key)
             if isinstance(value, list):
-                value = ", ".join(str(v) for v in value)
+                value = ", ".join(_strs(value))
             rows.append(
                 [
-                    _h((item.get("ioc_type") or key).upper()),
+                    _h(_str(item.get("ioc_type") or key).upper()),
                     _code_html(value) if value else "—",
                     _verdict(item.get("verdict")) if item.get("verdict") else "—",
                 ]
@@ -304,7 +359,8 @@ def _iocs(iocs: dict[str, Any]) -> list[str]:
     return _section("Indicators of Compromise", table)
 
 
-def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
+def _analyses(analyses: Any) -> list[str]:
+    analyses = _dicts(analyses)
     if not analyses:
         return []
     rows = [
@@ -314,7 +370,7 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
             _h(_date(a["analysis_created"])) if a.get("analysis_created") else "—",
             _verdict(a.get("analysis_verdict")),
         ]
-        for a in sorted(analyses, key=lambda a: a.get("analysis_created") or "", reverse=True)
+        for a in sorted(analyses, key=lambda a: _str(a.get("analysis_created")), reverse=True)
     ]
     table = _table(["Analysis", "Target Environment", "Created", "Verdict"], rows, frozenset({0, 2, 3}))
     return _section("Analyses", table)
@@ -324,8 +380,8 @@ def _screenshot_rows(analysis: dict[str, Any]) -> list[str]:
     """One list entry per screenshot: a toggle named after the screenshot that reveals the image at the
     comment's full width (a table cell would squeeze it)."""
     rows = []
-    for shot in analysis.get("analysis_screenshots") or []:
-        if not (isinstance(shot.get("data"), str) and _BASE64.fullmatch(shot["data"])):
+    for shot in _dicts(analysis.get("analysis_screenshots")):
+        if not _is_base64(shot.get("data")):
             continue
         name = _h(shot.get("name") or "screenshot")
         image = f'<img src="data:image/jpeg;base64,{shot["data"]}" alt="{name}" width="{_SCREENSHOT_WIDTH}">'
@@ -333,14 +389,26 @@ def _screenshot_rows(analysis: dict[str, Any]) -> list[str]:
     return rows
 
 
+def _is_base64(data: Any) -> bool:
+    """Only well-formed base64 goes into an image's src — anything else could break out of the attribute."""
+    if not isinstance(data, str) or not data or not _BASE64.fullmatch(data) or len(data) % 4:
+        return False
+    try:
+        base64.b64decode(data, validate=True)
+    except ValueError:
+        return False
+    return True
+
+
 def _screenshots(sample: dict[str, Any]) -> list[str]:
     """The main comment only points at the screenshots: the images themselves go in separate comments
     (render_screenshot_comments), since all of them together exceed Sekoia's playbook argument limit."""
-    count = sum(len(_screenshot_rows(a)) for a in sample.get("sample_analyses") or [])
+    count = sum(len(_screenshot_rows(a)) for a in _dicts(sample.get("sample_analyses")))
     if not count:
         return []
     return _section(
-        "Screenshots", [f"**{count} screenshot(s)** - posted in the separate _VMRay Screenshots_ comment(s)."]
+        "Screenshots",
+        [f"<div><b>{count} screenshot(s)</b> - posted in the separate <i>VMRay Screenshots</i> comment(s).</div>"],
     )
 
 
@@ -348,8 +416,8 @@ def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
     """(heading, tiles) per analysis with screenshots, for every sample and child sample, in report order."""
     groups: list[tuple[str, list[str]]] = []
 
-    def walk(sample: dict[str, Any]) -> None:
-        for analysis in sample.get("sample_analyses") or []:
+    def walk(sample: dict[str, Any], depth: int = 0) -> None:
+        for analysis in _dicts(sample.get("sample_analyses")):
             tiles = _screenshot_rows(analysis)
             if not tiles:
                 continue
@@ -359,48 +427,63 @@ def _screenshot_groups(report: dict[str, Any]) -> list[tuple[str, list[str]]]:
             if analysis.get("analysis_vm_description"):
                 heading += f" — {_text(analysis['analysis_vm_description'])}"
             groups.append((heading, tiles))
-        for child in sample.get("sample_child_samples") or []:
-            walk(child)
+        if depth < _TREE_MAX_DEPTH:
+            for child in _dicts(sample.get("sample_child_samples")):
+                walk(child, depth + 1)
 
-    for sample in report.get("samples") or []:
+    for sample in _dicts(report.get("samples")):
         walk(sample)
     return groups
 
 
-_COMMENT_HEADER_RESERVE = 96  # room for the "VMRay Screenshots (i/N)" title line
+_TOO_LARGE = "<div><i>📷 {name}: too large for a comment — see the VMRay report.</i></div>"
+
+
+def _size(text: str) -> int:
+    """What a comment costs against Sekoia's limit: its UTF-8 bytes once JSON-encoded as the action's input
+    (quotes and non-ASCII characters are escaped there, so they count for more)."""
+    return len(json.dumps(text).encode())
+
+
+def _assemble(chunk: list[tuple[str, list[str]]], index: int, total: int) -> str:
+    return "\n".join(
+        [_heading(f"VMRay Screenshots ({index}/{total})", 5)]
+        # an analysis's entries on one line, like the child-sample tree: no blank lines to space them out
+        + [line for heading, rows in chunk for line in ("", heading, "", "".join(rows))]
+    )
 
 
 def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[str]:
-    """Pack every screenshot row, in order, into as few comments as fit under max_bytes each. A row is
-    never split; one bigger than the limit still gets a comment of its own."""
-    budget = max(max_bytes - _COMMENT_HEADER_RESERVE, 1)
+    """Pack every screenshot row, in order, into as few comments as fit under max_bytes each, measured as
+    Sekoia receives them. A row is never split; a single screenshot too large for any comment is replaced by
+    a note pointing at the VMRay report, so no comment can exceed the limit."""
+    worst_total = 999  # the title's (i/N) is sized for up to 999 comments while packing
     chunks: list[list[tuple[str, list[str]]]] = []
     current: list[tuple[str, list[str]]] = []
-    size = 0
     for heading, tiles in _screenshot_groups(report):
         for tile in tiles:
-            group_cost = len(heading) + 2  # heading and the blank line around it
-            opens_group = not current or current[-1][0] != heading
-            cost = len(tile) + (group_cost if opens_group else 0)
-            if current and size + cost > budget:
-                chunks.append(current)
-                current, size = [], 0
-                opens_group, cost = True, len(tile) + group_cost
-            if opens_group:
-                current.append((heading, []))
-            current[-1][1].append(tile)
-            size += cost
+            for attempt in (current, []):  # first try the current comment, then a fresh one
+                candidate = [(h, list(rows)) for h, rows in attempt]
+                if candidate and candidate[-1][0] == heading:
+                    candidate[-1][1].append(tile)
+                else:
+                    candidate.append((heading, [tile]))
+                if _size(_assemble(candidate, worst_total, worst_total)) <= max_bytes:
+                    if attempt is not current and current:
+                        chunks.append(current)
+                    current = candidate
+                    break
+            else:  # does not fit even alone: keep a note in its place
+                name = re.search(r"<summary>📷 (.*?)</summary>", tile)
+                note = _TOO_LARGE.format(name=name.group(1) if name else "screenshot")
+                if current and current[-1][0] == heading:
+                    current[-1][1].append(note)
+                else:
+                    current.append((heading, [note]))
+
     if current:
         chunks.append(current)
-
-    return [
-        "\n".join(
-            [_heading(f"VMRay Screenshots ({index}/{len(chunks)})", 5)]
-            # an analysis's entries on one line, like the child-sample tree: no blank lines to space them out
-            + [line for heading, rows in chunk for line in ("", heading, "", "".join(rows))]
-        )
-        for index, chunk in enumerate(chunks, start=1)
-    ]
+    return [_assemble(chunk, index, len(chunks)) for index, chunk in enumerate(chunks, start=1)]
 
 
 _TREE_MAX_DEPTH = 10  # long.html's cap, so a deep chain still renders
@@ -413,18 +496,18 @@ def _tree_row(child: dict[str, Any], count: int) -> str:
         parts.append(_h(child["sample_type"]))
     if count:
         parts.append(f"({count} {'child' if count == 1 else 'children'})")
-    if child.get("sample_webif_url"):
-        parts.append(f'<a href="{_h(child["sample_webif_url"])}">View in VMRay</a>')
+    if _SAFE_LINK.match(_str(child.get("sample_webif_url"))):
+        parts.append(_link(child["sample_webif_url"], "View in VMRay"))
     return " · ".join(parts)
 
 
-def _child_tree(children: list[dict[str, Any]], depth: int = 1) -> list[str]:
+def _child_tree(children: Any, depth: int = 1) -> list[str]:
     """long.html's child-sample hierarchy: a sample with children is a collapsed toggle whose summary is
     its row, its children indented below in a <dd> (a <blockquote> adds a line of space above and below);
     a leaf is a plain row, padded to line up."""
     lines = []
-    for child in children:
-        grandchildren = child.get("sample_child_samples") or []
+    for child in _dicts(children):
+        grandchildren = _dicts(child.get("sample_child_samples"))
         count = len(grandchildren) or len(child.get("sample_child_sample_ids") or [])
         if grandchildren and depth < _TREE_MAX_DEPTH:
             lines.append(f"<details><summary>{_tree_row(child, count)}</summary><dd>")
@@ -436,46 +519,48 @@ def _child_tree(children: list[dict[str, Any]], depth: int = 1) -> list[str]:
 
 
 def _child_samples(sample: dict[str, Any]) -> list[str]:
-    children = sample.get("sample_child_samples") or []
+    children = _dicts(sample.get("sample_child_samples"))
     if children:
         # one line: a single HTML block markdown cannot split, with no newlines to become line breaks
         return _section(f"Child Samples ({len(children)})", ["".join(_child_tree(children))])
-    if sample.get("sample_child_sample_ids"):
+    if isinstance(sample.get("sample_child_sample_ids"), list) and sample["sample_child_sample_ids"]:
         count = len(sample["sample_child_sample_ids"])
-        return _section(f"Child Samples ({count})", ["_Not expanded — see the VMRay report._"])
+        return _section(f"Child Samples ({count})", ["<div><i>Not expanded — see the VMRay report.</i></div>"])
     return []
 
 
 def _render_sample(sample: dict[str, Any]) -> list[str]:
-    iocs = (sample.get("sample_iocs") or {}).get("iocs") or {}
+    iocs = _dict(_dict(sample.get("sample_iocs")).get("iocs"))
     lines = [
         *_overview(sample),
         *_detections(sample),
         *_ioc_summary(iocs),
-        *_threat_indicators((sample.get("sample_threat_indicators") or {}).get("threat_indicators") or []),
-        *_mitre((sample.get("sample_mitre_attack") or {}).get("mitre_attack_techniques") or []),
+        *_threat_indicators(_dict(sample.get("sample_threat_indicators")).get("threat_indicators")),
+        *_mitre(_dict(sample.get("sample_mitre_attack")).get("mitre_attack_techniques")),
         *_iocs(iocs),
-        *_analyses(sample.get("sample_analyses") or []),
+        *_analyses(sample.get("sample_analyses")),
         *_screenshots(sample),
         *_child_samples(sample),
     ]
-    if sample.get("errors"):
-        failed = ", ".join(_h(e) for e in sorted(sample["errors"]))
+    if _dict(sample.get("errors")):
+        # a markdown paragraph, not an HTML block: escaped as markdown text
+        failed = ", ".join(_text(e) for e in sorted(map(str, sample["errors"])))
         lines += ["", f"⚠️ _Partial data — these sections failed to load: {failed}._"]
     return lines
 
 
 def render_report(report: dict[str, Any]) -> str:
-    samples = report.get("samples") or []
+    samples = _dicts(report.get("samples"))
     lines = [_heading("VMRay Report", 5)]
     if not samples:
-        lines += ["", "**No matches found for this observable.**"]
+        lines += ["", "**No matches found for this sample.**"]
     for index, sample in enumerate(samples, start=1):
         if len(samples) > 1:
             lines += ["", "---", "", _heading(f"Sample {index} of {len(samples)}", 4)]
-        lines += _render_sample(sample)
-    if report.get("errors"):
-        failed = ", ".join(_h(e) for e in sorted(report["errors"]))
+        # one line per section, with no blank line between them: together they form one HTML block
+        lines += ["", *_render_sample(sample)]
+    if _dict(report.get("errors")):
+        failed = ", ".join(_text(e) for e in sorted(map(str, report["errors"])))
         lines += ["", f"⚠️ _These samples could not be fetched from VMRay: {failed}._"]
     return "\n".join(lines)
 

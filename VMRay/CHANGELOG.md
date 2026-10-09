@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-09 - 4.1.0
+
+### Added
+
+- `SubmitUrlSample` — `failed_submission_ids` result: submissions VMRay finished with an error, or that could not be followed.
+- End-to-end tests running every action as Sekoia does (`Action.execute()`) against a fake VMRay, chained as in the playbooks.
+
+### Changed
+
+- `RenderReport` — each section is written on one line of HTML, so no extra space appears between or inside sections.
+- `RenderReport` — the empty-report message reads "No matches found for this sample."
+- `GetSamplesByHash` — fails when VMRay could not answer for any hash (wrong API key, VMRay down) instead of taking `not_found`; a single hash and empty entries are accepted.
+- `SubmitUrlSample` — a submission refused with an HTTP error, or finished with an error, takes `submission_failed`; one failed status check no longer ends the wait (a submission is given up after 3 in a row).
+- `ExtractIocs` — values are normalised and checked before they reach an IOC collection: IPs with a port or CIDR range, URLs without a scheme and invalid hashes are dropped; domains and hashes are lowercased; an email address is taken from "Name <address>".
+- `ExtractIocs` — an `ioc_severity_filter` with no valid value (e.g. a typo) is an error instead of extracting every IOC.
+- Inputs are bounded: `max_recursive_samples` and `max_recursion_depth` 0–10, `max_comment_kb` at least 16, `query_retry_wait` above 0, `timeout` 0 or more.
+- Client — every request has a timeout; a submission is no longer retried after a server error (it could be submitted and billed twice); `Retry-After` and backoff waits are capped; `analysis_caching` is no longer sent; a `base_url` ending in `/rest` works.
+
+### Fixed
+
+- `BuildReport` — odd VMRay data no longer fails the whole report: malformed screenshot summaries, very thin or huge images, null threat names or classifications, sections of an unexpected type, network or non-JSON errors on one sample, and children pointing back up the tree (which could cost thousands of requests).
+- `BuildReport` — a submission VMRay returns no sample for is reported in `errors`.
+- `RenderReport` / `ExtractIocs` — unexpected data shapes render or extract instead of failing.
+- `RenderReport` — screenshot comments are measured as Sekoia receives them and never exceed the limit; a screenshot too large for any comment is replaced by a note.
+- `RenderReport` / `ExtractIocs` — a missing, unreadable or malformed report file gives a clear error.
+
+### Security
+
+- `RenderReport` — a line break in a value from the sample (e.g. a dropped file's name) could end the comment's HTML and inject a link or remote image; line breaks and control characters are now removed from every value.
+- `RenderReport` / `ExtractIocs` — `report_path` can only read files inside the playbook run's data directory.
+- `RenderReport` — only `http(s)` VMRay URLs become links; warning lines are escaped as markdown; screenshot data must be valid base64.
+- `GetSamplesByHash` — a value that is not a hex hash is refused before it reaches the request URL.
+
 ## 2026-10-09 - 4.0.1
 
 ### Fixed

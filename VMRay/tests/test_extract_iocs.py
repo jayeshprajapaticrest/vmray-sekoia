@@ -72,10 +72,15 @@ def test_empty_filter_extracts_every_ioc():
     assert {("domain", "unrated.example"), ("domain", "cdn.example"), ("hash", "e" * 64)} <= result
 
 
-def test_unknown_severities_are_ignored():
-    """The analyzer's rule: only 'malicious' and 'suspicious' count; with none left, nothing is filtered."""
-    assert values(extract_iocs(REPORT, ["bogus"], include_child_iocs=True)) == values(
-        extract_iocs(REPORT, [], include_child_iocs=True)
+def test_a_filter_with_only_unknown_severities_is_an_error():
+    """A typo must not become "no filter" — that would push clean IOCs into a blocklist."""
+    with pytest.raises(ValueError, match="no valid value"):
+        extract_iocs(REPORT, ["malicous"], include_child_iocs=True)
+
+
+def test_unknown_values_next_to_a_valid_one_are_ignored():
+    assert values(extract_iocs(REPORT, ["malicious", "bogus"], include_child_iocs=True)) == values(
+        extract_iocs(REPORT, ["malicious"], include_child_iocs=True)
     )
 
 
@@ -125,7 +130,7 @@ def test_action_groups_indicators_by_type():
 
 
 def test_action_has_no_groups_without_indicators():
-    result = ExtractIocs().run({"report": {"samples": [{"sample_verdict": "clean"}]}})
+    result = ExtractIocs().run({"report": {"samples": [{"sample_id": 1, "sample_verdict": "clean"}]}})
 
     assert result["indicators"] == []
     assert result["indicator_groups"] == []
@@ -227,3 +232,69 @@ def test_item_missing_every_candidate_key_is_skipped_not_raised():
     indicators = iocs_to_indicators(iocs)
 
     assert indicators == []
+
+
+# -- every value is checked: Add IOC to IOC Collection fails the whole push on one invalid IP --------------
+
+
+@pytest.mark.parametrize(
+    "category,item,expected",
+    [
+        ("ips", {"ip_address": " 203.0.113.7 "}, ("IP address", "203.0.113.7")),
+        ("ips", {"ip_address": "203.0.113.7:443"}, None),
+        ("ips", {"ip_address": "10.0.0.0/8"}, None),
+        ("ips", {"ip_address": "2001:db8::1"}, ("IP address", "2001:db8::1")),
+        ("domains", {"domain": "Evil.Example."}, ("domain", "evil.example")),
+        ("domains", {"domain": "not a domain"}, None),
+        ("urls", {"url": "https://evil.example/p?q=1"}, ("url", "https://evil.example/p?q=1")),
+        ("urls", {"url": "evil.example/path"}, None),
+        ("emails", {"sender": "Bob <bob@evil.example>"}, ("email", "bob@evil.example")),
+        ("email_addresses", {"email_address": "not-an-email"}, None),
+        ("files", {"hashes": [{"sha256_hash": "A" * 64}]}, ("hash", "a" * 64)),
+        ("files", {"hashes": [{"sha1_hash": "x"}]}, None),
+        ("domains", {"domain": "   "}, None),
+    ],
+)
+def test_values_are_normalised_or_dropped(category, item, expected):
+    indicators = iocs_to_indicators(IOCSet.model_validate({category: [item]}))
+
+    assert [(i.type, i.value) for i in indicators] == ([expected] if expected else [])
+
+
+def test_the_same_value_in_different_case_is_kept_once():
+    report = {
+        "samples": [
+            {
+                "sample_id": 1,
+                "sample_iocs": {
+                    "iocs": {
+                        "domains": [{"domain": "Evil.COM"}, {"domain": "evil.com"}],
+                        "files": [{"hashes": [{"sha256_hash": "D" * 64}]}],
+                    }
+                },
+                "sample_child_samples": [
+                    {"sample_id": 2, "sample_verdict": "malicious", "sample_sha256hash": "d" * 64}
+                ],
+            }
+        ]
+    }
+
+    result = [(i.type, i.value) for i in extract_iocs(report, [], include_child_iocs=True)]
+
+    assert result == [("domain", "evil.com"), ("hash", "d" * 64)]
+
+
+@pytest.mark.parametrize(
+    "sample_iocs",
+    [
+        {"iocs": [{"domain": "x.example"}]},  # iocs not a dict
+        {"iocs": {"domains": ["x.example", None]}},  # items not dicts
+        {"iocs": {"domains": {"domain": "x.example"}}},  # category not a list
+        {"iocs": {"domains": [{"domain": "x.example", "severity": 5}]}},  # severity not a string
+        None,
+    ],
+)
+def test_odd_shapes_extract_nothing_instead_of_failing(sample_iocs):
+    report = {"samples": [{"sample_id": 1, "sample_iocs": sample_iocs}, "not a sample"]}
+
+    assert extract_iocs(report, ["malicious"], include_child_iocs=True) == []

@@ -16,7 +16,7 @@ later; a plain str degrades gracefully instead.
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from pydantic.json_schema import SkipJsonSchema
 from sekoia_automation.module import Module
 
@@ -74,7 +74,10 @@ class SubmissionOptions(BaseModel):
     )
     max_recursive_samples: int = Field(
         default=10,
-        description="The maximum amount of recursive samples which will be analyzed. 0 disables recursion.",
+        ge=0,
+        le=10,
+        description="The maximum amount of recursive samples which will be analyzed (at most 10). 0 disables "
+        "recursion.",
     )
     max_jobs: int | SkipJsonSchema[None] = Field(
         default=None, description="Limits the amount of jobs that can be created by jobrules for a submission."
@@ -134,20 +137,30 @@ class Submission(BaseModel):
 
 
 class SubmitUrlSampleArguments(SubmissionOptions):
-    sample_url: str = Field(..., description="URL to submit for detonation.")
+    sample_url: str = Field(..., min_length=1, description="URL to submit for detonation.")
     reanalyze: bool = Field(
         default=True,
         description="If set to true, known samples will be re-analyzed on submission. This is enabled by default.",
     )
     tags: list[str] = Field(default_factory=lambda: ["sekoia"], description="Tags to attach to the sample.")
     query_retry_wait: float = Field(
-        default=10, description="The amount of seconds to wait before trying to fetch the results."
+        default=10,
+        gt=0,
+        allow_inf_nan=False,
+        description="The amount of seconds to wait before trying to fetch the results.",
     )
     timeout: float = Field(
         default=1800,
+        ge=0,
+        allow_inf_nan=False,
         description="Maximum time (seconds) to wait for every submission to finish. The analyzer waits forever; "
         "this stops and takes the timed_out branch.",
     )
+
+    @field_validator("sample_url", mode="before")
+    @classmethod
+    def _strip(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
 
 
 class SubmitUrlSampleResults(BaseModel):
@@ -162,7 +175,12 @@ class SubmitUrlSampleResults(BaseModel):
         default_factory=list, description="Submissions still running when the wait timed out."
     )
     timed_out: bool = False
-    errors: list[dict[str, str]] = Field(default_factory=list, description="Errors VMRay returned on submit.")
+    failed_submission_ids: list[int] = Field(
+        default_factory=list, description="Submissions that finished with an error, or could not be followed."
+    )
+    errors: list[dict[str, Any]] = Field(
+        default_factory=list, description="Errors VMRay returned on submit, and why a submission failed."
+    )
 
 
 # --------------------------------------------------------------------------
@@ -177,6 +195,17 @@ class GetSamplesByHashArguments(BaseModel):
         description="List of SHA256, SHA1 or MD5 file hashes to look up in VMRay — e.g. the hashes extracted from "
         "the alert's events. Duplicates are ignored; no quota is used.",
     )
+
+    @field_validator("hashes", mode="before")
+    @classmethod
+    def _one_or_many(cls, value: Any) -> Any:
+        """A single hash is accepted as a one-item list, and empty values — what a playbook template yields for
+        an event without that hash field — are dropped instead of failing the action."""
+        if isinstance(value, str):
+            value = [value]
+        if isinstance(value, list):
+            return [str(h) for h in value if h is not None and str(h).strip()]
+        return value
 
 
 class GetSamplesByHashResults(BaseModel):
@@ -226,6 +255,24 @@ class ReportSample(BaseModel):
         default_factory=dict, description="Sections of this sample that failed to load; the rest is still filled."
     )
 
+    @field_validator(
+        "sample_threat_names",
+        "sample_classifications",
+        "sample_analyses",
+        "sample_threat_indicators",
+        "sample_mitre_attack",
+        "sample_iocs",
+        "sample_child_samples",
+        "errors",
+        mode="before",
+    )
+    @classmethod
+    def _null_is_empty(cls, value: Any, info: ValidationInfo) -> Any:
+        """VMRay sends null for an empty list on some sample fields (e.g. the deprecated sample_threat_names)."""
+        if value is None:
+            return cls.model_fields[info.field_name or ""].get_default(call_default_factory=True)
+        return value
+
 
 class BuildReportArguments(BaseModel):
     model_config = {"json_schema_extra": hide_empty_defaults}
@@ -240,8 +287,10 @@ class BuildReportArguments(BaseModel):
     )
     max_recursion_depth: int = Field(
         default=10,
-        description="The maximum depth of recursive samples which will be analyzed in the report. 0 disables "
-        "recursion.",
+        ge=0,
+        le=10,
+        description="The maximum depth of recursive samples which will be analyzed in the report (at most 10). 0 "
+        "disables recursion.",
     )
     ioc_severity_filter: list[str] = Field(
         default_factory=list,

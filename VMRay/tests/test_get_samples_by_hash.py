@@ -86,3 +86,50 @@ def test_bad_or_failing_hash_is_recorded_and_the_rest_still_checked(requests_moc
 
     assert set(result["errors"]) == {"not-a-hash", MD5}
     assert result["sample_ids"] == [42]
+
+
+# -- review findings ------------------------------------------------------------------------------------
+
+
+def test_every_lookup_failing_is_an_error_not_not_found(requests_mock):
+    """A wrong API key or VMRay being down must not read as "VMRay never saw these hashes"."""
+    import pytest
+
+    from vmray_modules.client import VMRayClientError
+
+    requests_mock.get(f"{BASE_URL}/rest/sample/sha256/{SHA256}", status_code=401, json={"error_msg": "bad key"})
+    action = make_action()
+
+    with pytest.raises(VMRayClientError, match="No hash could be looked up"):
+        action.run({"hashes": [SHA256]})
+    assert action.outputs == {}
+
+
+def test_one_failing_hash_keeps_the_others(requests_mock):
+    requests_mock.get(f"{BASE_URL}/rest/sample/sha256/{SHA256}", text="<html>proxy</html>")
+    mock_lookup(requests_mock, "md5", MD5, [{"sample_id": 42}])
+
+    result = make_action().run({"hashes": [SHA256, MD5]})
+
+    assert result["sample_ids"] == [42]
+    assert "not JSON" in result["errors"][SHA256] or "other than JSON" in result["errors"][SHA256]
+
+
+def test_a_single_hash_and_empty_values_are_accepted(requests_mock):
+    mock_lookup(requests_mock, "md5", MD5, [{"sample_id": 42}])
+
+    assert make_action().run({"hashes": MD5})["sample_ids"] == [42]
+    assert make_action().run({"hashes": [MD5, None, "", "  "]})["sample_ids"] == [42]
+
+
+def test_a_non_hex_value_is_never_put_in_the_url(requests_mock):
+    result = make_action().run({"hashes": ["../../submission/" + "1" * 15, "z" * 32]})
+
+    assert set(result["errors"]) == {"../../submission/" + "1" * 15, "z" * 32}
+    assert requests_mock.call_count == 0
+
+
+def test_matches_without_a_sample_id_are_ignored(requests_mock):
+    mock_lookup(requests_mock, "md5", MD5, [{"no_id": True}, "x", {"sample_id": 42}])
+
+    assert make_action().run({"hashes": [MD5]})["sample_ids"] == [42]

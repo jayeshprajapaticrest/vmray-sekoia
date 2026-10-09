@@ -10,7 +10,10 @@ their own SHA256 — a dropped or downloaded payload — when their verdict pass
 the same filter. No VMRay or Sekoia call.
 """
 
+import ipaddress
+import re
 from collections.abc import Iterator
+from email.utils import parseaddr
 from typing import Any
 
 from vmray_modules.base import VMRayAction
@@ -30,6 +33,36 @@ _CATEGORY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
 # {md5_hash, sha1_hash, sha256_hash, ...} — one entry per file content seen.
 # Each entry contributes its strongest hash, as the Cortex analyzer does.
 _HASH_PRIORITY = ("sha256_hash", "sha1_hash", "md5_hash")
+
+
+_HEX_HASH = re.compile(r"[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}")
+_URL = re.compile(r"[a-z][a-z0-9+.-]*://\S+", re.IGNORECASE)
+_DOMAIN = re.compile(r"[^\s/@:]+\.[^\s/@:]+")
+
+
+def normalise(indicator_type: str, value: str) -> str | None:
+    """The value as Sekoia's IOC collection expects it, or None when it is not a valid indicator of that type —
+    Add IOC to IOC Collection fails the whole push on one invalid IP, so every value is checked here."""
+    value = value.strip()
+    if not value:
+        return None
+    if indicator_type == "IP address":  # a plain address: no port, no CIDR range
+        try:
+            return str(ipaddress.ip_address(value))
+        except ValueError:
+            return None
+    if indicator_type == "domain":
+        value = value.lower().rstrip(".")
+        return value if _DOMAIN.fullmatch(value) else None
+    if indicator_type == "url":
+        return value if _URL.fullmatch(value) else None
+    if indicator_type == "email":  # a sender can be "Name <address>"
+        address = parseaddr(value)[1]
+        return address if "@" in address and " " not in address else None
+    if indicator_type == "hash":
+        value = value.lower()
+        return value if _HEX_HASH.fullmatch(value) else None
+    return None
 
 
 def _extract_value(item: dict[str, Any], candidate_keys: tuple[str, ...]) -> str | None:
@@ -55,29 +88,35 @@ def iocs_to_indicators(iocs: IOCSet) -> list[Indicator]:
     seen: set[tuple[str, str]] = set()
     indicators: list[Indicator] = []
 
-    for category, (indicator_type, candidate_keys) in _CATEGORY_MAP.items():
-        for item in getattr(iocs, category):
-            value = _extract_value(item, candidate_keys)
-            if value is None or (indicator_type, value) in seen:
-                continue
+    def add(indicator_type: str, raw: str | None) -> None:
+        value = normalise(indicator_type, raw) if raw is not None else None
+        if value is not None and (indicator_type, value) not in seen:
             seen.add((indicator_type, value))
             indicators.append(Indicator(value=value, type=indicator_type))
 
+    for category, (indicator_type, candidate_keys) in _CATEGORY_MAP.items():
+        for item in getattr(iocs, category):
+            add(indicator_type, _extract_value(item, candidate_keys))
+
     for item in iocs.files:
         for value in _extract_hashes(item):
-            if ("hash", value) in seen:
-                continue
-            seen.add(("hash", value))
-            indicators.append(Indicator(value=value, type="hash"))
+            add("hash", value)
 
     return indicators
 
 
-def _walk(samples: list[dict[str, Any]], include_children: bool, level: int = 0) -> Iterator[tuple[dict, int]]:
-    for sample in samples:
+_MAX_DEPTH = 10  # Build report's own limit on child-sample levels
+
+
+def _dicts(value: Any) -> list[dict[str, Any]]:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _walk(samples: Any, include_children: bool, level: int = 0) -> Iterator[tuple[dict, int]]:
+    for sample in _dicts(samples):
         yield sample, level
-        if include_children:
-            yield from _walk(sample.get("sample_child_samples") or [], include_children, level + 1)
+        if include_children and level < _MAX_DEPTH:
+            yield from _walk(sample.get("sample_child_samples"), include_children, level + 1)
 
 
 _IOC_SEVERITIES = ("malicious", "suspicious")
@@ -88,12 +127,17 @@ def _severities(values: list[str]) -> set[str]:
     return {v.strip().lower() for v in values if v and v.strip().lower() in _IOC_SEVERITIES}
 
 
-def _passes(severity: str | None, wanted: set[str]) -> bool:
-    return not wanted or (severity or "").lower() in wanted
+def _passes(severity: Any, wanted: set[str]) -> bool:
+    return not wanted or str(severity or "").lower() in wanted
 
 
 def extract_iocs(report: dict[str, Any], ioc_severity_filter: list[str], include_child_iocs: bool) -> list[Indicator]:
     wanted = _severities(ioc_severity_filter)
+    if any(v and v.strip() for v in ioc_severity_filter) and not wanted:
+        # a typo such as "malicous" must not turn into "no filter": that would push clean IOCs to blocklists
+        raise ValueError(
+            f"ioc_severity_filter has no valid value: {ioc_severity_filter!r} — use 'malicious' and/or 'suspicious'"
+        )
     seen: set[tuple[str, str]] = set()
     indicators: list[Indicator] = []
 
@@ -103,17 +147,18 @@ def extract_iocs(report: dict[str, Any], ioc_severity_filter: list[str], include
             seen.add(key)
             indicators.append(indicator)
 
-    for sample, level in _walk(report.get("samples") or [], include_child_iocs):
-        iocs = (sample.get("sample_iocs") or {}).get("iocs") or {}
+    for sample, level in _walk(report.get("samples"), include_child_iocs):
+        sample_iocs = sample.get("sample_iocs")
+        iocs = sample_iocs.get("iocs") if isinstance(sample_iocs, dict) else None
         kept = {
-            category: [item for item in items if _passes(item.get("severity") or item.get("verdict"), wanted)]
-            for category, items in iocs.items()
-            if isinstance(items, list)
+            category: [item for item in _dicts(items) if _passes(item.get("severity") or item.get("verdict"), wanted)]
+            for category, items in (iocs.items() if isinstance(iocs, dict) else [])
         }
         for indicator in iocs_to_indicators(IOCSet.model_validate(kept)):
             add(indicator)
-        if level > 0 and sample.get("sample_sha256hash") and _passes(sample.get("sample_verdict"), wanted):
-            add(Indicator(value=sample["sample_sha256hash"], type="hash"))
+        child_hash = normalise("hash", str(sample.get("sample_sha256hash") or ""))
+        if level > 0 and child_hash and _passes(sample.get("sample_verdict"), wanted):
+            add(Indicator(value=child_hash, type="hash"))
 
     return indicators
 

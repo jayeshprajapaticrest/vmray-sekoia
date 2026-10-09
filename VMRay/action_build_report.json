@@ -23,7 +23,9 @@
       },
       "max_recursion_depth": {
         "default": 10,
-        "description": "The maximum depth of recursive samples which will be analyzed in the report. 0 disables recursion.",
+        "description": "The maximum depth of recursive samples which will be analyzed in the report (at most 10). 0 disables recursion.",
+        "maximum": 10,
+        "minimum": 0,
         "title": "Max Recursion Depth",
         "type": "integer"
       },

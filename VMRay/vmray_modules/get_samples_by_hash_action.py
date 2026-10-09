@@ -7,12 +7,14 @@ alert's events usually carry several hashes and each lookup is free.
 Lookup only — building the full report (VTIs, IOCs, MITRE ATT&CK) is a separate
 action that takes the returned sample_ids. Zero quota. Partial failure is per
 hash: a bad or failing hash lands in `errors` and the rest are still checked.
+When every lookup fails, the action fails: taking `not_found` would tell the
+playbook VMRay never saw the hashes when nothing was actually checked.
 """
 
 from typing import Any
 
 from vmray_modules.base import VMRayAction
-from vmray_modules.client import VMRayClientError
+from vmray_modules.client import UnknownHashTypeError, VMRayClientError
 from vmray_modules.models import GetSamplesByHashArguments, GetSamplesByHashResults
 
 
@@ -31,17 +33,31 @@ class GetSamplesByHash(VMRayAction):
         not_found: list[str] = []
         errors: dict[str, str] = {}
 
+        vmray_failed = False
         for sample_hash in distinct:
             try:
                 matches = self.client.get_samples_by_hash(sample_hash)
-            except VMRayClientError as exc:
+            except UnknownHashTypeError as exc:  # bad input from the alert: reported, but it was checked
                 errors[sample_hash] = str(exc)
                 continue
+            except VMRayClientError as exc:
+                errors[sample_hash] = str(exc)
+                vmray_failed = True
+                continue
+            matches = (
+                [m for m in matches if isinstance(m, dict) and "sample_id" in m] if isinstance(matches, list) else []
+            )
             if not matches:
                 not_found.append(sample_hash)
             # md5/sha1/sha256 of one file resolve to the same sample — keep it once
             for match in matches:
                 samples.setdefault(match["sample_id"], match)
+
+        if vmray_failed and not samples and not not_found and len(errors) == len(distinct):
+            # nothing was actually checked (wrong API key, VMRay down…) — not the same as "VMRay never saw these"
+            raise VMRayClientError(
+                "No hash could be looked up in VMRay: " + "; ".join(f"{h}: {e}" for h, e in errors.items())
+            )
 
         found = bool(samples)
         self.set_output("found" if found else "not_found", True)

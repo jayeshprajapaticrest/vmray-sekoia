@@ -120,9 +120,13 @@ def test_comment_title_and_section_headings(content):
     assert not any(line.startswith("#") for line in content.splitlines())  # no markdown headings mixed in
 
 
+def section_line(content, title):
+    """A section, written on one line: its heading toggle, its content and its closing tag."""
+    return next(line for line in content.splitlines() if line.startswith(heading(title)))
+
+
 def test_overview_is_a_property_value_table_like_every_other_section(content):
-    section = content[content.index(heading("Overview")) :]
-    table = section.split("\n")[2]
+    table = section_line(content, "Overview").removeprefix(heading("Overview"))
     assert table.startswith('<table width="100%">' + row("Property", "Value", nowrap={0}, tag="th"))
     assert row("<b>Verdict</b>", badge("MALICIOUS", RED), nowrap={0}) in table
     assert "VTI Score" not in content  # not shown in the overview
@@ -136,8 +140,7 @@ def test_overview_is_a_property_value_table_like_every_other_section(content):
 
 
 def test_detections_section_of_its_own(content):
-    section = content[content.index(heading("Detections")) :]
-    table = section.split("\n")[2]
+    table = section_line(content, "Detections")
     assert row("Detection", "Values", nowrap={0}, tag="th") in table
     assert row("<b>Threat Names</b>", code("ClickFix"), nowrap={0}) in table
     assert row("<b>Classifications</b>", code("Downloader"), nowrap={0}) in table
@@ -161,8 +164,9 @@ def test_ioc_summary_counters(content):
 
 def test_section_heading_is_its_own_toggle(content):
     assert "Toggle" not in content  # no separate Toggle button under the heading
-    section = content[content.index(heading("VMRay Threat Identifiers")) :]
-    assert section.split("\n")[2].startswith("<table")  # table straight under the heading
+    line = section_line(content, "VMRay Threat Identifiers")
+    assert line.startswith(heading("VMRay Threat Identifiers") + "<table")  # table straight under the heading
+    assert line.endswith("</table></details>")
 
 
 def test_threat_identifiers_coloured_scores(content):
@@ -173,8 +177,8 @@ def test_threat_identifiers_coloured_scores(content):
 
 def test_mitre_id_buttons_then_collapsed_details(content):
     link = '<a href="https://attack.mitre.org/techniques/T1204/002/">T1204.002</a>'
-    section = content[content.index(heading("MITRE ATT&amp;CK")) :]
-    assert section.split("\n")[2] == link  # button row, always visible
+    section = section_line(content, "MITRE ATT&amp;CK")
+    assert section.startswith(heading("MITRE ATT&amp;CK") + f"<div>{link}</div>")  # button row, always visible
     assert "<details><summary>Details</summary>" in section  # collapsed, as in long.html
     assert row(link, "Malicious File", "Execution", nowrap={0}) in section
 
@@ -212,11 +216,14 @@ def test_odd_technique_id_is_never_put_into_a_link():
     assert code("T1059](http://attacker.example)") in content  # shown as code, never linked
 
 
-def test_sections_are_spaced_apart(content):
-    """Sekoia puts no margin between toggles, so every section is followed by a spacer line."""
-    sections = content.count("<details open><summary><b>")
-    assert sections == 8  # every section of the fixture: no screenshots
-    assert content.count("</details>\n<br>") == sections  # MITRE's inner Details toggle gets none
+def test_each_section_is_one_line_with_no_space_around_it(content):
+    """Blank lines or a <br> between sections add vertical space in Sekoia — each section is one line of HTML,
+    and the sections follow each other directly."""
+    lines = [line for line in content.splitlines() if line.startswith("<details open><summary><b>")]
+    assert len(lines) == 8  # every section of the fixture: no screenshots
+    assert all(line.endswith("</details>") for line in lines)
+    assert "\n".join(lines) in content  # consecutive, no blank line between them
+    assert "<br>" not in content
 
 
 def test_every_toggle_is_closed(content):
@@ -224,7 +231,7 @@ def test_every_toggle_is_closed(content):
 
 
 def test_partial_data_warning(content):
-    assert "failed to load: sample_threat_names" in content
+    assert "failed to load: sample\\_threat\\_names" in content  # markdown-escaped, renders as sample_threat_names
 
 
 def test_screenshots_never_rendered(content):
@@ -276,7 +283,7 @@ def test_multiple_samples_and_report_errors():
 
 
 def test_no_samples():
-    assert render_report({"samples": []}) == title("VMRay Report", 5) + "\n\n**No matches found for this observable.**"
+    assert render_report({"samples": []}) == title("VMRay Report", 5) + "\n\n**No matches found for this sample.**"
 
 
 def test_long_tables_are_capped():
@@ -319,7 +326,7 @@ def test_unbuilt_children_are_counted():
     content = render_report({"samples": [{"sample_id": 1, "sample_child_sample_ids": [2, 3]}]})
 
     assert heading("Child Samples (2)") in content
-    assert "_Not expanded — see the VMRay report._" in content
+    assert "<div><i>Not expanded — see the VMRay report.</i></div>" in content
 
 
 def test_action_reads_inline_and_from_data_path(data_storage):
@@ -340,7 +347,7 @@ def test_bare_urls_and_emails_in_text_do_not_autolink():
     content = render_report({"samples": [{"sample_id": 1, "sample_threat_indicators": {"threat_indicators": vtis}}]})
 
     line = next(line for line in content.splitlines() if "c2.example" in line)
-    assert line.startswith("<table")  # the whole table is one HTML block line
+    assert line.startswith("<details open>")  # the whole section, table included, is one HTML block line
     assert ">Contacts http://c2.example and www.c2.example, mails a@c2.example<" in line
 
 
@@ -369,7 +376,7 @@ def test_main_comment_points_at_screenshots_without_embedding_them():
     content = render_report({"samples": [with_screenshots(count=3)]})
 
     section = content[content.index(heading("Screenshots")) :]
-    assert "**3 screenshot(s)** - posted in the separate _VMRay Screenshots_ comment(s)." in section
+    assert "<div><b>3 screenshot(s)</b> - posted in the separate <i>VMRay Screenshots</i> comment(s).</div>" in section
     assert live_images(content) == 0  # screenshots never go in the main comment
 
 
@@ -445,3 +452,123 @@ def test_each_screenshot_is_embedded_once_behind_its_own_toggle():
     assert comments[0].count("<details><summary>📷 a.png</summary>") == 2
     assert "</details><details>" in comments[0]  # an analysis's entries on one line, no gaps between them
     assert "<details open" not in comments[0]  # collapsed until clicked
+
+
+# -- review findings: injection, odd shapes, links, screenshot sizes ----------------------------------------
+
+PAYLOAD = "x\n\n![](https://evil.example/p.png) [Click](https://evil.example)\n\n"
+
+
+def test_a_line_break_in_any_value_cannot_end_the_html_block():
+    """A blank line would end the one-line HTML section and let markdown render the rest as an image/link."""
+    sample = {
+        "sample_id": 1,
+        "sample_verdict_reason_description": PAYLOAD,
+        "sample_type": PAYLOAD,
+        "sample_created": PAYLOAD,
+        "sample_threat_indicators": {
+            "threat_indicators": [
+                {"score": 3, "category": PAYLOAD, "operation": PAYLOAD, "classifications": [PAYLOAD]}
+            ]
+        },
+        "sample_mitre_attack": {
+            "mitre_attack_techniques": [{"technique_id": PAYLOAD, "technique": PAYLOAD, "tactics": [PAYLOAD]}]
+        },
+        "sample_iocs": {"iocs": {"domains": [{"ioc_type": PAYLOAD, "domain": PAYLOAD}]}},
+        "sample_analyses": [
+            {"analysis_analyzer_name": PAYLOAD, "analysis_vm_description": PAYLOAD, "analysis_created": PAYLOAD}
+        ],
+        "sample_child_samples": [{"sample_id": 2, "sample_filename": PAYLOAD, "sample_type": PAYLOAD}],
+    }
+
+    content = render_report({"samples": [sample]})
+
+    assert "\n![" not in content and "\n[Click" not in content
+    sections = [line for line in content.splitlines() if line.startswith("<details open>")]
+    assert all(line.endswith("</details>") for line in sections)  # no section was cut in two
+
+
+def test_only_http_links_are_made_from_vmray_urls():
+    sample = {
+        "sample_id": 1,
+        "sample_webif_url": "javascript:alert(1)",
+        "sample_child_samples": [{"sample_id": 2, "sample_webif_url": "data:text/html,x"}],
+    }
+
+    content = render_report({"samples": [sample]})
+
+    assert "javascript:" not in content and "data:text" not in content
+
+
+def test_malformed_base64_screenshots_are_dropped():
+    for data in ("abc", "A", "%%%%", ""):
+        assert render_screenshot_comments({"samples": [with_screenshots(data=data)]}, 512 * 1024) == []
+
+
+def test_warning_lines_are_escaped_as_markdown():
+    content = render_report({"samples": [], "errors": {"[click](https://evil.example)": "x"}})
+
+    assert "\\[click\\]\\(https:\\/\\/evil.example\\)" in content
+
+
+def test_bare_www_in_any_case_does_not_autolink():
+    sample = with_screenshots() | {
+        "sample_analyses": [
+            {"analysis_analyzer_name": "WWW.evil.example", "analysis_screenshots": [{"name": "a.png", "data": SHOT}]}
+        ]
+    }
+
+    comment = render_screenshot_comments({"samples": [sample]}, 512 * 1024)[0]
+
+    assert "WWW\\.evil.example" in comment
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"sample_id": 1, "sample_verdict": 5, "sample_created": 1700000000},
+        {"sample_id": 1, "sample_threat_names": "Lumma", "sample_classifications": [1, None]},
+        {"sample_id": 1, "sample_threat_indicators": {"threat_indicators": [{"score": "5"}, {"score": 4}, "x"]}},
+        {
+            "sample_id": 1,
+            "sample_mitre_attack": {"mitre_attack_techniques": [{"technique_id": 7, "tactics": "TA"}, 1]},
+        },
+        {"sample_id": 1, "sample_iocs": {"iocs": [1, 2]}},
+        {"sample_id": 1, "sample_iocs": {"iocs": {"domains": {"a": 1}, "ips": ["x", {"ioc_type": 3, "verdict": 2}]}}},
+        {"sample_id": 1, "sample_analyses": [{"analysis_created": 5}, {"analysis_created": "2026-01-01"}, None]},
+        {"sample_id": 1, "sample_child_samples": ["x", {"sample_id": 2, "sample_child_samples": "y"}]},
+        {"sample_id": 1, "errors": ["not", "a", "dict"]},
+    ],
+)
+def test_odd_shapes_render_instead_of_failing(sample):
+    content = render_report({"samples": [sample, "not a sample"], "errors": {1: "x", "2": "y"}})
+
+    assert content.startswith(title("VMRay Report", 5))
+    render_screenshot_comments({"samples": [sample]}, 512 * 1024)
+
+
+def test_screenshot_comments_never_exceed_the_limit_as_sekoia_receives_them():
+    """Measured as UTF-8 JSON: emoji, accents and quotes count for more than one character."""
+    analyses = [
+        {
+            "analysis_analyzer_name": f"Анализ {i} · ü",
+            "analysis_vm_description": "Windows — 10",
+            "analysis_screenshots": [{"name": f"écran_{i}.png", "data": "QUFB" * 50}],
+        }
+        for i in range(60)
+    ]
+    report = {"samples": [{"sample_id": 1, "sample_filename": "файл.exe", "sample_analyses": analyses}]}
+
+    comments = render_screenshot_comments(report, 4096)
+
+    assert sum(c.count("<img") for c in comments) == 60
+    assert all(len(json.dumps(c).encode()) <= 4096 for c in comments)
+
+
+def test_a_screenshot_too_large_for_any_comment_is_replaced_by_a_note():
+    report = {"samples": [with_screenshots(data="A" * 40_000)]}
+
+    comments = render_screenshot_comments(report, 16 * 1024)
+
+    assert len(comments) == 1 and "<img" not in comments[0]
+    assert "a.png: too large for a comment" in comments[0]
