@@ -113,3 +113,17 @@ def test_sends_reference_submission_parameters(requests_mock):
     assert form["shareable"] == ["False"]
     assert form["max_recursive_samples"] == ["10"]
     assert json.loads(form["user_config"][0]) == {"net_scheme_name": "Isolated", "timeout": 120}
+
+
+def test_sends_the_analyzer_defaults(requests_mock):
+    """Like the Cortex analyzer, the recursion limit is always sent; its archive settings are not — they only apply
+    to submitted files."""
+    submit = mock_submit(requests_mock, [111])
+    requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222)])
+
+    make_action().run({"sample_url": URL})
+
+    form = parse_qs(submit.last_request.text)
+    assert form["max_recursive_samples"] == ["10"]
+    assert not {"archive_password", "archive_action"} & set(form)
+    assert not {"analyzer_mode", "max_jobs", "enable_reputation", "user_config"} & set(form)  # unset: not sent

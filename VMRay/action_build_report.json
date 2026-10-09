@@ -6,74 +6,48 @@
   "arguments": {
     "properties": {
       "sample_ids": {
-        "anyOf": [
-          {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
         "description": "VMRay sample IDs \u2014 e.g. the `sample_ids` of Get samples by hash.",
-        "title": "Sample Ids"
+        "items": {
+          "type": "integer"
+        },
+        "title": "Sample Ids",
+        "type": "array"
       },
       "submission_ids": {
-        "anyOf": [
-          {
-            "items": {
-              "type": "integer"
-            },
-            "type": "array"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
         "description": "VMRay submission IDs \u2014 e.g. the `submission_ids` of Submit URL sample. Each is resolved to its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
-        "title": "Submission Ids"
+        "items": {
+          "type": "integer"
+        },
+        "title": "Submission Ids",
+        "type": "array"
       },
       "max_recursion_depth": {
-        "default": 1,
-        "description": "How many levels of child samples get a full report. 0 = only the given samples, 1 = also their direct children. Each level multiplies the API calls.",
+        "default": 10,
+        "description": "The maximum depth of recursive samples which will be analyzed in the report. 0 disables recursion.",
         "title": "Max Recursion Depth",
         "type": "integer"
       },
       "ioc_severity_filter": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Restrict fetched IOCs to this severity server-side ('malicious' or 'suspicious'). Empty = all severities.",
-        "title": "Ioc Severity Filter"
+        "description": "Restrict which IOC severities are fetched from VMRay. Allowed values: 'malicious', 'suspicious'. Add exactly one to filter server-side; leave empty (or add both) to fetch both severities.",
+        "items": {
+          "type": "string"
+        },
+        "title": "Ioc Severity Filter",
+        "type": "array"
       },
       "analysis_verdict_filter": {
-        "description": "Only keep analyses whose analysis_verdict is one of these values. Empty = keep all.",
+        "description": "Analysis verdicts to include in the report. Allowed values: 'malicious', 'suspicious', 'clean'. Leave empty to include all analyses, including those with an unknown verdict. Note: Adding all three allowed values is NOT the same as leaving empty \u2014 it still excludes analyses with unknown verdicts.",
         "items": {
           "type": "string"
         },
         "title": "Analysis Verdict Filter",
         "type": "array"
       },
-      "screenshot_mode": {
-        "default": "parent_only",
-        "description": "Which samples get their analyses' screenshots embedded: none, only the given (parent) samples, or every sample including children.",
-        "enum": [
-          "none",
-          "parent_only",
-          "all"
-        ],
-        "title": "Screenshot Mode",
-        "type": "string"
+      "include_screenshots": {
+        "default": true,
+        "description": "If set to true, the report includes the screenshots of the submitted URL or looked-up hash (the top-level samples only \u2014 never of their child samples).",
+        "title": "Include Screenshots",
+        "type": "boolean"
       }
     },
     "title": "BuildReportArguments",
@@ -83,7 +57,7 @@
     "description": "Only a summary travels inline. The report itself \u2014 screenshots included \u2014 can be megabytes, far over\nSekoia's limit on action arguments (SYM216), so it is written to data_path and passed on as a file.",
     "properties": {
       "report_path": {
-        "description": "Path (relative to data_path) of the full report JSON \u2014 give it to Render report and Report to indicator list as `report_path`.",
+        "description": "Path (relative to data_path) of the full report JSON \u2014 give it to Render report and Extract IOCs as `report_path`.",
         "title": "Report Path",
         "type": "string"
       },

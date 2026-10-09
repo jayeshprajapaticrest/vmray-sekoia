@@ -14,10 +14,21 @@ strings). A strict Literal would raise on an unseen-but-valid value VMRay adds
 later; a plain str degrades gracefully instead.
 """
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 from sekoia_automation.module import Module
+
+
+def hide_empty_defaults(schema: dict[str, Any]) -> None:
+    """Sekoia's playbook editor shows an input only when it has a plain `type`: optional inputs are typed
+    `X | SkipJsonSchema[None]` so the schema carries no `null` branch, and their `"default": null` is dropped
+    here — empty still means "not set" in the code."""
+    for prop in schema.get("properties", {}).values():
+        if "default" in prop and prop["default"] is None:
+            del prop["default"]
+
 
 # --------------------------------------------------------------------------
 # Module configuration
@@ -48,53 +59,57 @@ class VMRayModule(Module):
 
 
 class SubmissionOptions(BaseModel):
-    """Optional POST /sample/submit form fields. `None` means "not sent" — the
-    VMRay user's own analyzer settings apply. `net_scheme_name` and
-    `analysis_timeout` are not form fields: they ride inside the `user_config`
+    """POST /sample/submit form fields, with the descriptions, types and defaults of the
+    Cortex-Analyzers VMRay analyzer's configuration (VMRay.json) — minus its archive
+    settings, which only apply to submitted files. Options left empty
+    are not sent, so the VMRay user's own analyzer settings apply. `net_scheme_name`
+    and `analysis_timeout` are not form fields: they ride inside the `user_config`
     JSON string (as `net_scheme_name` and `timeout`)."""
 
-    enable_reputation: bool | None = Field(
-        default=None,
-        description="Run Reputation Analysis on the sample and its artifacts (hashes and URLs only are sent "
-        "to third-party services, never the file itself).",
-    )
-    enable_whois: bool | None = Field(
-        default=None, description="Query domains seen during analysis against an external WHOIS service."
-    )
-    analyzer_mode: str | None = Field(
-        default=None,
-        description="Analysis types to run: 'reputation', 'reputation_static', 'reputation_static_dynamic', "
-        "'static_dynamic' or 'static'.",
-    )
-    known_malicious: bool | None = Field(
-        default=None, description="Let Triage pre-filter known malicious samples (reputation + static)."
-    )
-    known_benign: bool | None = Field(
-        default=None, description="Let Triage pre-filter known benign samples (reputation + static)."
-    )
-    max_jobs: int | None = Field(
-        default=None, description="Cap on jobs Jobrules may create for this submission — bounds quota spend."
-    )
-    archive_action: str | None = Field(
-        default=None,
-        description="How a submitted archive is handled: 'sample', 'compound_sample' or 'separate_samples'.",
-    )
-    archive_password: str | None = Field(
-        default=None, description="Password of a submitted password-protected archive, if not a common one."
-    )
+    model_config = {"json_schema_extra": hide_empty_defaults}
+
     shareable: bool = Field(
         default=False,
-        description="Share the sample's hash with VirusTotal. Always sent; off unless explicitly enabled.",
+        description="If set to true, the hash of the sample will be shared with VirusTotal.",
     )
-    net_scheme_name: str | None = Field(
-        default=None, description="Network scheme for the analysis VM (e.g. 'Isolated'), sent via user_config."
+    max_recursive_samples: int = Field(
+        default=10,
+        description="The maximum amount of recursive samples which will be analyzed. 0 disables recursion.",
     )
-    analysis_timeout: int | None = Field(
-        default=None, description="Analysis timeout in seconds on the VMRay side, sent via user_config."
+    max_jobs: int | SkipJsonSchema[None] = Field(
+        default=None, description="Limits the amount of jobs that can be created by jobrules for a submission."
     )
-    max_recursive_samples: int | None = Field(
-        default=None, description="Maximum number of recursive (child) samples VMRay may create and analyse."
+    enable_reputation: bool | SkipJsonSchema[None] = Field(
+        default=None,
+        description="If set to true, reputation lookups will be performed for submitted samples and analysis "
+        "artifacts (file hash and URL lookups) by the VMRay cloud reputation service and additional third party "
+        "services. The user analyzer setting is used as default value for this parameter.",
     )
+    enable_whois: bool | SkipJsonSchema[None] = Field(
+        default=None,
+        description="If set to true, domains seen during analyses are queried with external WHOIS service. The user "
+        "analyzer setting is used as default value for this parameter.",
+    )
+    analyzer_mode: str | SkipJsonSchema[None] = Field(
+        default=None,
+        description="Specifies which types of analyzers will be used for analyzing this sample. Supported strings "
+        "are 'reputation', 'reputation_static', 'reputation_static_dynamic', 'static_dynamic', and 'static'. The "
+        "user analyzer setting is used as default value for this parameter.",
+    )
+    known_malicious: bool | SkipJsonSchema[None] = Field(
+        default=None,
+        description="If set to true, triage will be used to pre-filter known malicious samples by results of "
+        "reputation lookup (if allowed) and static analysis. The user analyzer setting is used as default value "
+        "for this parameter.",
+    )
+    known_benign: bool | SkipJsonSchema[None] = Field(
+        default=None,
+        description="If set to true, triage will be used to pre-filter known benign samples by results of "
+        "reputation lookup (if allowed) and static analysis. The user analyzer setting is used as default value "
+        "for this parameter.",
+    )
+    analysis_timeout: int | SkipJsonSchema[None] = Field(default=None, description="Analysis timeout in seconds.")
+    net_scheme_name: str | SkipJsonSchema[None] = Field(default=None, description="Name of the network schema.")
 
 
 # --------------------------------------------------------------------------
@@ -120,13 +135,19 @@ class Submission(BaseModel):
 
 class SubmitUrlSampleArguments(SubmissionOptions):
     sample_url: str = Field(..., description="URL to submit for detonation.")
-    tags: list[str] = Field(
-        default_factory=lambda: ["sekoia"],
-        description="Tags applied to the VMRay submission, for audit trail on the VMRay side.",
+    reanalyze: bool = Field(
+        default=True,
+        description="If set to true, known samples will be re-analyzed on submission. This is enabled by default.",
     )
-    reanalyze: bool = Field(default=True, description="Force a fresh analysis even if VMRay already knows the URL.")
-    query_retry_wait: float = Field(default=10, description="Seconds to wait between polls of the submission status.")
-    timeout: float = Field(default=1800, description="Maximum time (seconds) to wait for every submission to finish.")
+    tags: list[str] = Field(default_factory=lambda: ["sekoia"], description="Tags to attach to the sample.")
+    query_retry_wait: float = Field(
+        default=10, description="The amount of seconds to wait before trying to fetch the results."
+    )
+    timeout: float = Field(
+        default=1800,
+        description="Maximum time (seconds) to wait for every submission to finish. The analyzer waits forever; "
+        "this stops and takes the timed_out branch.",
+    )
 
 
 class SubmitUrlSampleResults(BaseModel):
@@ -151,7 +172,10 @@ class SubmitUrlSampleResults(BaseModel):
 
 class GetSamplesByHashArguments(BaseModel):
     hashes: list[str] = Field(
-        ..., description="SHA256, SHA1 or MD5 hashes to look up. Duplicates are ignored. Costs no quota."
+        ...,
+        title="File hashes",
+        description="List of SHA256, SHA1 or MD5 file hashes to look up in VMRay — e.g. the hashes extracted from "
+        "the alert's events. Duplicates are ignored; no quota is used.",
     )
 
 
@@ -204,32 +228,36 @@ class ReportSample(BaseModel):
 
 
 class BuildReportArguments(BaseModel):
-    sample_ids: list[int] | None = Field(
+    model_config = {"json_schema_extra": hide_empty_defaults}
+
+    sample_ids: list[int] | SkipJsonSchema[None] = Field(
         default=None, description="VMRay sample IDs — e.g. the `sample_ids` of Get samples by hash."
     )
-    submission_ids: list[int] | None = Field(
+    submission_ids: list[int] | SkipJsonSchema[None] = Field(
         default=None,
         description="VMRay submission IDs — e.g. the `submission_ids` of Submit URL sample. Each is resolved to "
         "its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
     )
     max_recursion_depth: int = Field(
-        default=1,
-        description="How many levels of child samples get a full report. 0 = only the given samples, "
-        "1 = also their direct children. Each level multiplies the API calls.",
+        default=10,
+        description="The maximum depth of recursive samples which will be analyzed in the report. 0 disables "
+        "recursion.",
     )
-    ioc_severity_filter: str | None = Field(
-        default=None,
-        description="Restrict fetched IOCs to this severity server-side ('malicious' or 'suspicious'). "
-        "Empty = all severities.",
+    ioc_severity_filter: list[str] = Field(
+        default_factory=list,
+        description="Restrict which IOC severities are fetched from VMRay. Allowed values: 'malicious', "
+        "'suspicious'. Add exactly one to filter server-side; leave empty (or add both) to fetch both severities.",
     )
     analysis_verdict_filter: list[str] = Field(
         default_factory=list,
-        description="Only keep analyses whose analysis_verdict is one of these values. Empty = keep all.",
+        description="Analysis verdicts to include in the report. Allowed values: 'malicious', 'suspicious', "
+        "'clean'. Leave empty to include all analyses, including those with an unknown verdict. Note: Adding all "
+        "three allowed values is NOT the same as leaving empty — it still excludes analyses with unknown verdicts.",
     )
-    screenshot_mode: Literal["none", "parent_only", "all"] = Field(
-        default="parent_only",
-        description="Which samples get their analyses' screenshots embedded: none, only the given (parent) "
-        "samples, or every sample including children.",
+    include_screenshots: bool = Field(
+        default=True,
+        description="If set to true, the report includes the screenshots of the submitted URL or looked-up hash "
+        "(the top-level samples only — never of their child samples).",
     )
 
 
@@ -251,7 +279,7 @@ class BuildReportResults(BaseModel):
     report_path: str = Field(
         ...,
         description="Path (relative to data_path) of the full report JSON — give it to Render report and "
-        "Report to indicator list as `report_path`.",
+        "Extract IOCs as `report_path`.",
     )
     sample_ids: list[int] = Field(default_factory=list, description="Samples in the report.")
     errors: dict[str, str] = Field(

@@ -6,11 +6,11 @@
   "arguments": {
     "properties": {
       "hashes": {
-        "description": "SHA256, SHA1 or MD5 hashes to look up. Duplicates are ignored. Costs no quota.",
+        "description": "List of SHA256, SHA1 or MD5 file hashes to look up in VMRay \u2014 e.g. the hashes extracted from the alert's events. Duplicates are ignored; no quota is used.",
         "items": {
           "type": "string"
         },
-        "title": "Hashes",
+        "title": "File hashes",
         "type": "array"
       }
     },

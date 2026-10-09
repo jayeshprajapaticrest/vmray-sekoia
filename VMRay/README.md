@@ -19,12 +19,12 @@ Requires VMRay Platform **2026.2 or later** (recursive threat-name/classificatio
 ```
 hashes ──► GetSamplesByHash ──► sample_ids ─────┐
                                                 ├─► BuildReport ──► report_path ─┬─► RenderReport ──► comment + screenshot comments
-URL ─────► SubmitUrlSample ───► submission_ids ─┘   (file on data_path)          └─► ReportToIndicators ──► IOC collection
+URL ─────► SubmitUrlSample ───► submission_ids ─┘   (file on data_path)          └─► ExtractIocs ──────► IOC collection
 ```
 
 1. **Find or create samples.** `GetSamplesByHash` looks hashes up in VMRay's existing analyses (no quota). `SubmitUrlSample` detonates a URL and waits for the result (consumes quota).
 2. **Build the report.** `BuildReport` fetches everything VMRay knows about each sample and writes the report to a JSON file on the playbook's data path. Only the file's path travels between nodes: a report with screenshots is far larger than Sekoia accepts as an action argument (SYM216).
-3. **Use the report.** `RenderReport` turns it into the alert comment; `ReportToIndicators` turns it into indicators for an IOC collection. Neither calls VMRay or Sekoia.
+3. **Use the report.** `RenderReport` turns it into the alert comment; `ExtractIocs` turns it into indicators for an IOC collection. Neither calls VMRay or Sekoia.
 
 ## Actions
 
@@ -34,7 +34,7 @@ Looks up SHA256, SHA1 or MD5 hashes in VMRay's existing analyses and returns eve
 
 | Argument | Default | Notes |
 |---|---|---|
-| `hashes` | required | list of hashes; duplicates ignored |
+| `hashes` (File hashes) | required | list of SHA256, SHA1 or MD5 hashes to look up; duplicates ignored, no quota used |
 
 **Outputs:** `found` (at least one sample) / `not_found` (none). **Results:** `sample_ids`, `samples`, `not_found` (hashes VMRay has never analysed), `errors` (per hash: invalid value or lookup failure).
 
@@ -45,12 +45,15 @@ Submits a URL and polls every resulting submission until it finishes.
 | Argument | Default | Notes |
 |---|---|---|
 | `sample_url` | required | the URL to detonate |
-| `reanalyze` | `true` | force a fresh analysis even if VMRay already knows the URL |
-| `tags` | `["sekoia"]` | tags on the VMRay submission, for an audit trail on the VMRay side |
-| `timeout` | `1800` | seconds to wait for every submission to finish |
-| `query_retry_wait` | `10` | seconds between polls |
-| `shareable` | `false` | share the sample's hash with VirusTotal — always sent, off unless enabled |
-| `analyzer_mode`, `max_jobs`, `max_recursive_samples`, `net_scheme_name`, `analysis_timeout`, `enable_reputation`, `enable_whois`, `known_malicious`, `known_benign`, `archive_action`, `archive_password` | unset | VMRay submission options; unset ones fall back to the VMRay user's analyzer settings |
+| `reanalyze` | `true` | re-analyze known samples on submission |
+| `tags` | `["sekoia"]` | tags to attach to the sample |
+| `shareable` | `false` | share the sample's hash with VirusTotal |
+| `max_recursive_samples` | `10` | maximum amount of recursive samples analyzed; `0` disables recursion |
+| `query_retry_wait` | `10` | seconds to wait before trying to fetch the results |
+| `timeout` | `1800` | seconds to wait for every submission to finish, then the `timed_out` branch |
+| `analyzer_mode`, `max_jobs`, `enable_reputation`, `enable_whois`, `known_malicious`, `known_benign`, `analysis_timeout`, `net_scheme_name` | empty | VMRay submission options; empty ones are not sent, so the VMRay user's analyzer settings apply |
+
+Names, descriptions, types and defaults follow the Cortex-Analyzers VMRay analyzer's configuration (`VMRay.json`), without its archive settings (`archive_password`, `archive_compound_sample`) — they only apply to submitted files, and this module submits URLs only. Where the names differ: its `recursive_sample_limit` is `max_recursive_samples` here and its `timeout` (analysis timeout) is `analysis_timeout`, since `timeout` here is how long the action waits.
 
 **Outputs:** `completed` / `timed_out` / `submission_failed`. **Results:** `submission_ids`, `sample_ids`, `submissions`, `pending_submission_ids` (still running at the timeout), `errors` (VMRay's reasons for a rejected submission).
 
@@ -61,16 +64,18 @@ The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_i
 | Argument | Default | Notes |
 |---|---|---|
 | `sample_ids` / `submission_ids` | one required | |
-| `max_recursion_depth` | `1` | levels of child samples that get a full report: `0` = only the given samples |
-| `screenshot_mode` | `parent_only` | `none`, `parent_only` (the given samples) or `all` (child samples too) |
-| `ioc_severity_filter` | empty | `malicious` or `suspicious` to fetch only IOCs of that severity |
-| `analysis_verdict_filter` | empty | keep only analyses with one of these verdicts |
+| `max_recursion_depth` | `10` | maximum depth of child samples analyzed in the report; `0` disables recursion |
+| `include_screenshots` | `true` | include the screenshots of the submitted URL or looked-up hash — the top-level samples only, never their child samples |
+| `ioc_severity_filter` | empty | list of `malicious` / `suspicious`: exactly one filters server-side; empty or both fetch both severities |
+| `analysis_verdict_filter` | empty | list of `malicious` / `suspicious` / `clean` to include; empty includes all analyses, even those with an unknown verdict (adding all three does not) |
+
+These follow the Cortex-Analyzers VMRay analyzer's configuration (`VMRay.json`), except `include_screenshots`: there it is `none` / `parent_only` / `all`, here it is on or off and covers the top-level samples only — child samples' screenshots would multiply the comments for little value. Its `recursive_sample_limit` — which the analyzer uses both for the submission and as the report's depth — is `max_recursion_depth` here (and `max_recursive_samples` on `SubmitUrlSample`). Values outside the allowed ones are ignored, as in the analyzer.
 
 Screenshots are read from each analysis archive (`logs/summary.json`), scaled to at most 800 px wide and re-encoded as JPEG, then embedded as base64 — Sekoia has no attachment API, so this is the only way they reach the alert. Every screenshot is kept.
 
 A failing section lands in that sample's `errors` and every other section is still filled; a sample or submission that cannot be fetched at all lands in the report's `errors`.
 
-**Results:** `report_path` (give it to `RenderReport` and `ReportToIndicators`), `sample_ids`, `errors`.
+**Results:** `report_path` (give it to `RenderReport` and `ExtractIocs`), `sample_ids`, `errors`.
 
 ### `RenderReport` — Render report
 
@@ -79,7 +84,7 @@ Turns a report into the alert comment, laid out like the VMRay TheHive report.
 | Argument | Default | Notes |
 |---|---|---|
 | `report_path` (or `report`) | required | Build report's `report_path` |
-| `max_comment_kb` | `256` | maximum size of each screenshot comment |
+| `max_comment_kb` | `512` | maximum size of each screenshot comment |
 
 **Results:**
 
@@ -87,7 +92,7 @@ Turns a report into the alert comment, laid out like the VMRay TheHive report.
 
   | Section | Contents |
   |---|---|
-  | Overview | verdict, VTI score, reason, URL or filename, type, created, MD5/SHA1/SHA256, link to the VMRay report |
+  | Overview | verdict, reason, URL or filename, type, created, MD5/SHA1/SHA256, link to the VMRay report |
   | Detections | threat names and classifications |
   | IOC Summary | count per IOC type |
   | VMRay Threat Identifiers | VTIs, strongest first, with a coloured 1–5 score |
@@ -103,15 +108,15 @@ Turns a report into the alert comment, laid out like the VMRay TheHive report.
 
 Every value that comes from the analysed sample (filenames, URLs, IOC values, rule text) is escaped, so a crafted sample cannot inject links, remote images or markup into the comment.
 
-### `ReportToIndicators` — Report to indicator list
+### `ExtractIocs` — Extract IOCs
 
-Turns a report into indicators for Sekoia's "Add IOC to IOC Collection" action.
+Extracts a report's IOCs as indicators for Sekoia's "Add IOC to IOC Collection" action.
 
 | Argument | Default | Notes |
 |---|---|---|
 | `report_path` (or `report`) | required | Build report's `report_path` |
-| `verdicts` | `["malicious"]` | only samples with one of these verdicts contribute; each child sample is judged on its own verdict. Empty = every sample |
-| `include_child_samples` | `true` | also take the child samples' IOCs, and each child sample's own SHA256 |
+| `ioc_severity_filter` | `["malicious"]` | IOC severities to extract: `malicious`, `suspicious`. Each IOC is judged on its own severity; a child sample's own SHA256 on its verdict. Empty = every IOC; other values are ignored |
+| `include_child_iocs` | `true` | also extract the child samples' IOCs and each child sample's own SHA256; `false` = root sample only |
 
 **Results:** `indicators` (`[{value, type}]`, deduplicated) and `indicator_groups` — the same values grouped by type, one entry per non-empty type (`[{type, indicators}]`). "Add IOC to IOC Collection" takes one `indicator_type` per call, so a Foreach over `indicator_groups` pushes every type with one node.
 

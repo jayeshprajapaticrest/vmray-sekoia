@@ -74,12 +74,9 @@ def _compress_screenshot(img_bytes: bytes) -> bytes:
     return buf.getvalue()
 
 
-def _should_fetch_screenshots(mode: str, level: int) -> bool:
-    if mode == "none":
-        return False
-    if mode == "parent_only":
-        return level == 0
-    return True
+def _should_fetch_screenshots(include: bool, level: int) -> bool:
+    """Only the submitted or looked-up samples (level 0) get screenshots — never their child samples."""
+    return include and level == 0
 
 
 def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> None:
@@ -108,15 +105,32 @@ def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> None:
     sample["has_screenshots"] = any(a.get("analysis_screenshots") for a in analyses)
 
 
+_IOC_SEVERITIES = ("malicious", "suspicious")
+_ANALYSIS_VERDICTS = ("malicious", "suspicious", "clean")
+
+
+def ioc_severity(values: list[str]) -> str | None:
+    """The analyzer's rule: exactly one valid severity filters server-side; none or both fetch everything."""
+    wanted = {v.strip().lower() for v in values if v and v.strip().lower() in _IOC_SEVERITIES}
+    return wanted.pop() if len(wanted) == 1 else None
+
+
+def analysis_verdicts(values: list[str]) -> list[str]:
+    """The analyzer's rule: values other than malicious/suspicious/clean are ignored."""
+    return sorted({v.strip().lower() for v in values if v and v.strip().lower() in _ANALYSIS_VERDICTS})
+
+
 def build_sample_node(
     client: VMRayClient, sample: dict[str, Any], level: int, arguments: BuildReportArguments
 ) -> None:
     sample_id = sample["sample_id"]
+    verdicts = analysis_verdicts(arguments.analysis_verdict_filter)
+    severity = ioc_severity(arguments.ioc_severity_filter)
     tasks: dict[str, Callable[[], Any]] = {
-        "sample_analyses": lambda: client.get_sample_analyses(sample_id, verdicts=arguments.analysis_verdict_filter),
+        "sample_analyses": lambda: client.get_sample_analyses(sample_id, verdicts=verdicts),
         "sample_threat_indicators": lambda: client.get_sample_threat_indicators(sample_id),
         "sample_mitre_attack": lambda: client.get_sample_mitre_attack(sample_id),
-        "sample_iocs": lambda: client.get_sample_iocs(sample_id, severity=arguments.ioc_severity_filter),
+        "sample_iocs": lambda: client.get_sample_iocs(sample_id, severity=severity),
         "sample_classifications": lambda: client.get_sample_classifications(sample_id),
         "sample_threat_names": lambda: client.get_sample_threat_names(sample_id),
     }
@@ -124,7 +138,7 @@ def build_sample_node(
     results, errors = run_concurrently(tasks)
     sample.update(results)
 
-    if _should_fetch_screenshots(arguments.screenshot_mode, level):
+    if _should_fetch_screenshots(arguments.include_screenshots, level):
         fetch_screenshots(client, sample)
 
     if arguments.max_recursion_depth > level:

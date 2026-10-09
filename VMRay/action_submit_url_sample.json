@@ -5,183 +5,86 @@
   "docker_parameters": "SubmitUrlSample",
   "arguments": {
     "properties": {
-      "enable_reputation": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Run Reputation Analysis on the sample and its artifacts (hashes and URLs only are sent to third-party services, never the file itself).",
-        "title": "Enable Reputation"
-      },
-      "enable_whois": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Query domains seen during analysis against an external WHOIS service.",
-        "title": "Enable Whois"
-      },
-      "analyzer_mode": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Analysis types to run: 'reputation', 'reputation_static', 'reputation_static_dynamic', 'static_dynamic' or 'static'.",
-        "title": "Analyzer Mode"
-      },
-      "known_malicious": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Let Triage pre-filter known malicious samples (reputation + static).",
-        "title": "Known Malicious"
-      },
-      "known_benign": {
-        "anyOf": [
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Let Triage pre-filter known benign samples (reputation + static).",
-        "title": "Known Benign"
-      },
-      "max_jobs": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Cap on jobs Jobrules may create for this submission \u2014 bounds quota spend.",
-        "title": "Max Jobs"
-      },
-      "archive_action": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "How a submitted archive is handled: 'sample', 'compound_sample' or 'separate_samples'.",
-        "title": "Archive Action"
-      },
-      "archive_password": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Password of a submitted password-protected archive, if not a common one.",
-        "title": "Archive Password"
-      },
       "shareable": {
         "default": false,
-        "description": "Share the sample's hash with VirusTotal. Always sent; off unless explicitly enabled.",
+        "description": "If set to true, the hash of the sample will be shared with VirusTotal.",
         "title": "Shareable",
         "type": "boolean"
       },
-      "net_scheme_name": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Network scheme for the analysis VM (e.g. 'Isolated'), sent via user_config.",
-        "title": "Net Scheme Name"
+      "max_recursive_samples": {
+        "default": 10,
+        "description": "The maximum amount of recursive samples which will be analyzed. 0 disables recursion.",
+        "title": "Max Recursive Samples",
+        "type": "integer"
+      },
+      "max_jobs": {
+        "description": "Limits the amount of jobs that can be created by jobrules for a submission.",
+        "title": "Max Jobs",
+        "type": "integer"
+      },
+      "enable_reputation": {
+        "description": "If set to true, reputation lookups will be performed for submitted samples and analysis artifacts (file hash and URL lookups) by the VMRay cloud reputation service and additional third party services. The user analyzer setting is used as default value for this parameter.",
+        "title": "Enable Reputation",
+        "type": "boolean"
+      },
+      "enable_whois": {
+        "description": "If set to true, domains seen during analyses are queried with external WHOIS service. The user analyzer setting is used as default value for this parameter.",
+        "title": "Enable Whois",
+        "type": "boolean"
+      },
+      "analyzer_mode": {
+        "description": "Specifies which types of analyzers will be used for analyzing this sample. Supported strings are 'reputation', 'reputation_static', 'reputation_static_dynamic', 'static_dynamic', and 'static'. The user analyzer setting is used as default value for this parameter.",
+        "title": "Analyzer Mode",
+        "type": "string"
+      },
+      "known_malicious": {
+        "description": "If set to true, triage will be used to pre-filter known malicious samples by results of reputation lookup (if allowed) and static analysis. The user analyzer setting is used as default value for this parameter.",
+        "title": "Known Malicious",
+        "type": "boolean"
+      },
+      "known_benign": {
+        "description": "If set to true, triage will be used to pre-filter known benign samples by results of reputation lookup (if allowed) and static analysis. The user analyzer setting is used as default value for this parameter.",
+        "title": "Known Benign",
+        "type": "boolean"
       },
       "analysis_timeout": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Analysis timeout in seconds on the VMRay side, sent via user_config.",
-        "title": "Analysis Timeout"
+        "description": "Analysis timeout in seconds.",
+        "title": "Analysis Timeout",
+        "type": "integer"
       },
-      "max_recursive_samples": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Maximum number of recursive (child) samples VMRay may create and analyse.",
-        "title": "Max Recursive Samples"
+      "net_scheme_name": {
+        "description": "Name of the network schema.",
+        "title": "Net Scheme Name",
+        "type": "string"
       },
       "sample_url": {
         "description": "URL to submit for detonation.",
         "title": "Sample Url",
         "type": "string"
       },
+      "reanalyze": {
+        "default": true,
+        "description": "If set to true, known samples will be re-analyzed on submission. This is enabled by default.",
+        "title": "Reanalyze",
+        "type": "boolean"
+      },
       "tags": {
-        "description": "Tags applied to the VMRay submission, for audit trail on the VMRay side.",
+        "description": "Tags to attach to the sample.",
         "items": {
           "type": "string"
         },
         "title": "Tags",
         "type": "array"
       },
-      "reanalyze": {
-        "default": true,
-        "description": "Force a fresh analysis even if VMRay already knows the URL.",
-        "title": "Reanalyze",
-        "type": "boolean"
-      },
       "query_retry_wait": {
         "default": 10,
-        "description": "Seconds to wait between polls of the submission status.",
+        "description": "The amount of seconds to wait before trying to fetch the results.",
         "title": "Query Retry Wait",
         "type": "number"
       },
       "timeout": {
         "default": 1800,
-        "description": "Maximum time (seconds) to wait for every submission to finish.",
+        "description": "Maximum time (seconds) to wait for every submission to finish. The analyzer waits forever; this stops and takes the timed_out branch.",
         "title": "Timeout",
         "type": "number"
       }

@@ -1,13 +1,13 @@
-"""ReportToIndicators — pure transform: a BuildReport result -> Sekoia's flat,
-typed indicator list for add_ioc_to_ioc_collection, plus the same list grouped
-by type (`indicator_groups`): that action takes one indicator_type per call, so
-a playbook pushes every type with one Foreach over the groups.
+"""ExtractIocs — pure transform: a BuildReport result -> Sekoia's flat, typed
+indicator list for add_ioc_to_ioc_collection, plus the same list grouped by type
+(`indicator_groups`): that action takes one indicator_type per call, so a
+playbook pushes every type with one Foreach over the groups.
 
-Walks every sample and (by default) its child samples. Each sample is judged
-on its own verdict: only samples in `verdicts` (default: malicious) contribute,
-which enforces the IOC-collection policy even when one report mixes a
-malicious parent with clean children. Child samples also add their own SHA256
-— a dropped or downloaded payload. No VMRay or Sekoia call.
+Walks every sample and (by default) its child samples, like the Cortex-Analyzers
+VMRay analyzer's artifacts. Each IOC is judged on its own severity: only IOCs in
+`ioc_severity_filter` (default: malicious) are extracted. Child samples also add
+their own SHA256 — a dropped or downloaded payload — when their verdict passes
+the same filter. No VMRay or Sekoia call.
 """
 
 from collections.abc import Iterator
@@ -18,7 +18,7 @@ from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.base import VMRayAction
 from vmray_modules.models import Indicator, IOCSet
-from vmray_modules.report_models import IndicatorGroup, ReportToIndicatorsArguments, ReportToIndicatorsResults
+from vmray_modules.report_models import ExtractIocsArguments, ExtractIocsResults, IndicatorGroup
 
 # category -> (Sekoia indicator_type, candidate value keys, tried in order)
 _CATEGORY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
@@ -83,8 +83,20 @@ def _walk(samples: list[dict[str, Any]], include_children: bool, level: int = 0)
             yield from _walk(sample.get("sample_child_samples") or [], include_children, level + 1)
 
 
-def report_to_indicators(report: dict[str, Any], verdicts: list[str], include_child_samples: bool) -> list[Indicator]:
-    wanted = {v.strip().lower() for v in verdicts if v}
+_IOC_SEVERITIES = ("malicious", "suspicious")
+
+
+def _severities(values: list[str]) -> set[str]:
+    """The analyzer's rule: values other than malicious/suspicious are ignored; none left = no filter."""
+    return {v.strip().lower() for v in values if v and v.strip().lower() in _IOC_SEVERITIES}
+
+
+def _passes(severity: str | None, wanted: set[str]) -> bool:
+    return not wanted or (severity or "").lower() in wanted
+
+
+def extract_iocs(report: dict[str, Any], ioc_severity_filter: list[str], include_child_iocs: bool) -> list[Indicator]:
+    wanted = _severities(ioc_severity_filter)
     seen: set[tuple[str, str]] = set()
     indicators: list[Indicator] = []
 
@@ -94,14 +106,16 @@ def report_to_indicators(report: dict[str, Any], verdicts: list[str], include_ch
             seen.add(key)
             indicators.append(indicator)
 
-    for sample, level in _walk(report.get("samples") or [], include_child_samples):
-        if wanted and (sample.get("sample_verdict") or "").lower() not in wanted:
-            continue
-        for indicator in iocs_to_indicators(
-            IOCSet.model_validate((sample.get("sample_iocs") or {}).get("iocs") or {})
-        ):
+    for sample, level in _walk(report.get("samples") or [], include_child_iocs):
+        iocs = (sample.get("sample_iocs") or {}).get("iocs") or {}
+        kept = {
+            category: [item for item in items if _passes(item.get("severity") or item.get("verdict"), wanted)]
+            for category, items in iocs.items()
+            if isinstance(items, list)
+        }
+        for indicator in iocs_to_indicators(IOCSet.model_validate(kept)):
             add(indicator)
-        if level > 0 and sample.get("sample_sha256hash"):
+        if level > 0 and sample.get("sample_sha256hash") and _passes(sample.get("sample_verdict"), wanted):
             add(Indicator(value=sample["sample_sha256hash"], type="hash"))
 
     return indicators
@@ -120,20 +134,20 @@ def group_indicators(indicators: list[Indicator]) -> list[IndicatorGroup]:
     return [group for group in groups if group.indicators]
 
 
-class ReportToIndicators(VMRayAction):
-    name = "Report to indicator list"
+class ExtractIocs(VMRayAction):
+    name = "Extract IOCs"
     description = (
-        "Convert a Build report result into the flat, typed indicator list Sekoia's add_ioc_to_ioc_collection "
-        "expects, and the same list grouped by type — from malicious samples only by default, child samples included."
+        "Extract the IOCs of a Build report as the typed indicators Add IOC to IOC Collection expects, also grouped "
+        "by type — malicious IOCs only by default, child samples included."
     )
-    results_model = ReportToIndicatorsResults
+    results_model = ExtractIocsResults
 
-    def run(self, arguments: ReportToIndicatorsArguments) -> ReportToIndicatorsResults:
+    def run(self, arguments: ExtractIocsArguments) -> ExtractIocsResults:
         if arguments.report is not None:
             report = arguments.report
         elif arguments.report_path:
             report = orjson.loads(self.data_path.joinpath(arguments.report_path).read_bytes())
         else:
             raise MissingActionArgumentError("report")
-        indicators = report_to_indicators(report, arguments.verdicts, arguments.include_child_samples)
-        return ReportToIndicatorsResults(indicators=indicators, indicator_groups=group_indicators(indicators))
+        indicators = extract_iocs(report, arguments.ioc_severity_filter, arguments.include_child_iocs)
+        return ExtractIocsResults(indicators=indicators, indicator_groups=group_indicators(indicators))

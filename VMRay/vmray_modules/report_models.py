@@ -1,28 +1,37 @@
 """Models for the actions that consume a BuildReport result (RenderReport,
-ReportToIndicators). The report itself keeps the Cortex-Analyzers VMRay
-analyzer's nested shape, so it is taken here as a plain dict."""
+ExtractIocs). The report itself keeps the Cortex-Analyzers VMRay analyzer's
+nested shape, so it is taken here as a plain dict."""
 
 from typing import Any
 
 from pydantic import BaseModel, Field
+from pydantic.json_schema import SkipJsonSchema
 
-from vmray_modules.models import Indicator
+from vmray_modules.models import Indicator, hide_empty_defaults
 
 
 class ReportInput(BaseModel):
-    report: dict[str, Any] | None = Field(
-        default=None, description="A Build report result ({samples, errors}), given inline."
+    model_config = {"json_schema_extra": hide_empty_defaults}
+
+    report_path: str | SkipJsonSchema[None] = Field(
+        default=None,
+        title="Report path",
+        description="The report file written by Build report — its `report_path` result.",
     )
-    report_path: str | None = Field(
-        default=None, description="Path (on data_path) of the report file — Build report's `report_path`."
+    report: dict[str, Any] | SkipJsonSchema[None] = Field(
+        default=None,
+        title="Report (inline)",
+        description="The report itself, instead of Report path. Only for small reports: a report with screenshots "
+        "exceeds Sekoia's size limit on action inputs.",
     )
 
 
 class RenderReportArguments(ReportInput):
     max_comment_kb: int = Field(
-        default=256,
-        description="Maximum size (KB) of each screenshot comment. Sekoia rejects playbook action arguments above "
-        "an undocumented size (SYM216), so screenshots are split across comments that each stay under this.",
+        default=512,
+        title="Max comment size (KB)",
+        description="Maximum size of each screenshot comment. Screenshots are split across as many comments as "
+        "needed to stay under it — Sekoia rejects larger action inputs (SYM216).",
     )
 
 
@@ -37,14 +46,19 @@ class RenderReportResults(BaseModel):
     )
 
 
-class ReportToIndicatorsArguments(ReportInput):
-    verdicts: list[str] = Field(
+class ExtractIocsArguments(ReportInput):
+    ioc_severity_filter: list[str] = Field(
         default_factory=lambda: ["malicious"],
-        description="Only samples whose sample_verdict is one of these contribute indicators — child samples "
-        "are judged on their own verdict. Empty = every sample.",
+        title="IOC severity filter",
+        description="Restrict which IOC severities are extracted. Allowed values: 'malicious', 'suspicious'. "
+        "Leave empty to extract every IOC, whatever its severity. A child sample's own SHA256 is extracted when "
+        "its verdict is one of these values.",
     )
-    include_child_samples: bool = Field(
-        default=True, description="Also take IOCs from child samples, and add each child sample's own SHA256."
+    include_child_iocs: bool = Field(
+        default=True,
+        title="Include child IOCs",
+        description="If set to true, IOCs discovered in child samples, and each child sample's own SHA256, are "
+        "extracted (in addition to root-sample IOCs). Set to false to only extract IOCs from the root sample.",
     )
 
 
@@ -55,7 +69,7 @@ class IndicatorGroup(BaseModel):
     indicators: list[str] = Field(default_factory=list)
 
 
-class ReportToIndicatorsResults(BaseModel):
+class ExtractIocsResults(BaseModel):
     indicators: list[Indicator] = Field(default_factory=list)
     indicator_groups: list[IndicatorGroup] = Field(
         default_factory=list,

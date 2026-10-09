@@ -6,9 +6,9 @@ markdown with Angular's HTML sanitizer, so the template's visual elements map to
 coloured labels and score badges -> `<font color>`; section headings and their
 Toggle buttons -> one `<details open>` per section whose summary is the bold
 heading, MITRE's Details button -> a collapsed `<details>`; the overview
-definition list -> a Property | Value table, styled like every other section,
-and detections -> a table of their own; short columns kept from wrapping by
-non-breaking spaces and a minimum width (an invisible spacer image); titles ->
+definition list -> a Property | Value table, and detections -> a table of their
+own; every table is HTML, so short columns can be kept from wrapping (`nowrap`)
+and cells aligned (`valign`/`align`) — attributes Sekoia keeps; titles ->
 `<font size>` 5 (comment) and 4 (sample), so headings step down on one scale;
 screenshots -> long.html's list mode, one toggle per screenshot holding its
 single inline `data:` image, shown on click at the comment's full width (no
@@ -126,32 +126,46 @@ def _date(value: str) -> str:
 # -- layout helpers -------------------------------------------------------------
 
 
-# 1x1 transparent GIF. Sekoia's tables break even single words to fit a long value in the next column, so
-# a short column (labels, verdicts, dates) gets a minimum width from an invisible image of that width in its
-# header — the only width control left once Sekoia strips `style`.
-_SPACER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+_BREAK_EVERY = 16  # characters between optional line breaks in a long token (hash, URL, registry key)
 
 
-def _nowrap(text: str) -> str:
-    """Already-escaped text whose spaces must not wrap (multi-word labels, dates)."""
-    return text.replace(" ", "&nbsp;")
+def _code_html(value: Any) -> str:
+    """A value shown as code inside an HTML table. A long token gets an optional break (<wbr>) every few
+    characters, so a SHA256 or URL wraps inside its own cell instead of squeezing the other columns."""
+    text = str(value).replace("\r", " ").replace("\n", " ")
+    chunks = [text[k : k + _BREAK_EVERY] for k in range(0, len(text), _BREAK_EVERY)] or [""]
+    return "<code>" + "<wbr>".join(_h(chunk) for chunk in chunks) + "</code>"
 
 
-def _header(headers: list[str], min_widths: dict[str, int] | None = None) -> list[str]:
-    cells = [
-        f'{h}<img src="{_SPACER}" width="{min_widths[h]}" height="1" alt="">' if min_widths and h in min_widths else h
-        for h in headers
-    ]
-    return ["| " + " | ".join(cells) + " |", "|" + "---|" * len(headers)]
+def _row(cells: list[str], nowrap: frozenset[int], tag: str = "td") -> str:
+    attrs = ' align="left" valign="top"'
+    return (
+        "<tr>"
+        + "".join(f"<{tag}{attrs}{' nowrap' if k in nowrap else ''}>{cell}</{tag}>" for k, cell in enumerate(cells))
+        + "</tr>"
+    )
 
 
-def _table(headers: list[str], rows: list[list[str]], min_widths: dict[str, int] | None = None) -> list[str]:
-    """A markdown table; `min_widths` maps a header to the pixel width its column must never shrink below."""
-    lines = _header(headers, min_widths)
-    lines += ["| " + " | ".join(row) + " |" for row in rows[:_MAX_ROWS]]
-    if len(rows) > _MAX_ROWS:
-        lines.append("| " + " | ".join([f"_…and {len(rows) - _MAX_ROWS} more_"] + [""] * (len(headers) - 1)) + " |")
-    return lines
+def _table(
+    headers: list[str],
+    rows: list[list[str]],
+    nowrap: frozenset[int] = frozenset(),
+    limit: int | None = _MAX_ROWS,
+    omitted: int = 0,
+) -> list[str]:
+    """An HTML table, on one line so markdown leaves it alone. HTML rather than a markdown table because only
+    HTML cells take the attributes Sekoia keeps once it strips `style`: `nowrap` on the short columns
+    (`nowrap` = their indexes — labels, types, verdicts, dates) so they never wrap whatever the zoom, and
+    `valign="top"` / `align="left"` on every cell so headings and values line up the same in every table.
+    Cell contents are HTML: escape them with _h or _code_html."""
+    shown = rows if limit is None else rows[:limit]
+    omitted += len(rows) - len(shown)
+    html = ['<table width="100%">', _row([_h(h) for h in headers], nowrap, "th")]
+    html += [_row(row, nowrap) for row in shown]
+    if omitted:
+        html.append(f'<tr><td colspan="{len(headers)}"><i>…and {omitted} more</i></td></tr>')
+    html.append("</table>")
+    return ["".join(html)]
 
 
 def _toggle(body: list[str], label: str, expanded: bool = True) -> list[str]:
@@ -184,11 +198,11 @@ _TECHNIQUE_ID = re.compile(r"T\d{4}(\.\d{3})?")
 
 
 def _mitre_link(technique_id: str) -> str:
-    """A technique ID linked to attack.mitre.org. Plain link text: Sekoia shows a code span inside a link
-    as literal backticks. An ID not shaped like Txxxx[.yyy] is only shown, never put into a URL."""
+    """A technique ID linked to attack.mitre.org. An ID not shaped like Txxxx[.yyy] is only shown, never
+    put into a URL."""
     if not _TECHNIQUE_ID.fullmatch(technique_id):
-        return _code(technique_id)
-    return f"[{technique_id}](https://attack.mitre.org/techniques/{technique_id.replace('.', '/')}/)"
+        return _code_html(technique_id)
+    return f'<a href="https://attack.mitre.org/techniques/{technique_id.replace(".", "/")}/">{technique_id}</a>'
 
 
 # -- sections (long.html 1-7) -------------------------------------------------------
@@ -197,45 +211,42 @@ def _mitre_link(technique_id: str) -> str:
 def _overview(sample: dict[str, Any]) -> list[str]:
     """long.html's overview, as a Property | Value table styled like every other section."""
     rows = [["Verdict", _verdict(sample.get("sample_verdict"))]]
-    if sample.get("sample_vti_score") is not None:
-        rows.append(["VTI Score", f"{_text(sample['sample_vti_score'])}/100"])
     if sample.get("sample_verdict_reason_description"):
-        rows.append(["Reason", _text(sample["sample_verdict_reason_description"])])
+        rows.append(["Reason", _h(sample["sample_verdict_reason_description"])])
     url = sample.get("sample_url") or sample.get("sample_display_url")
     if sample.get("sample_type") == "URL" and url:
-        rows.append(["URL", _code(url)])
+        rows.append(["URL", _code_html(url)])
     elif sample.get("sample_filename"):
-        rows.append(["Filename", _code(sample["sample_filename"])])
+        rows.append(["Filename", _code_html(sample["sample_filename"])])
     if sample.get("sample_type"):
-        rows.append(["Type", _text(sample["sample_type"])])
+        rows.append(["Type", _h(sample["sample_type"])])
     if sample.get("sample_created"):
-        rows.append(["Created", _nowrap(_text(_date(sample["sample_created"])))])
+        rows.append(["Created", _h(_date(sample["sample_created"]))])
     for key, label in (("sample_md5hash", "MD5"), ("sample_sha1hash", "SHA1"), ("sample_sha256hash", "SHA256")):
         if sample.get(key):
-            rows.append([label, _code(sample[key])])
+            rows.append([label, _code_html(sample[key])])
     if sample.get("sample_webif_url"):
         rows.append(["Report", f'<a href="{_h(sample["sample_webif_url"])}">View in VMRay</a>'])
-    table = _table(
-        ["Property", "Value"], [[f"**{_nowrap(label)}**", value] for label, value in rows], {"Property": 110}
-    )
+    table = _table(["Property", "Value"], [[f"<b>{label}</b>", value] for label, value in rows], frozenset({0}))
     return _section("Overview", table)
 
 
 def _detections(sample: dict[str, Any]) -> list[str]:
     rows = [
-        [f"**{_nowrap(label)}**", " ".join(_code(v) for v in sample[key])]
+        [f"<b>{label}</b>", " ".join(_code_html(v) for v in sample[key])]
         for key, label in (("sample_threat_names", "Threat Names"), ("sample_classifications", "Classifications"))
         if sample.get(key)
     ]
-    return _section("Detections", _table(["Detection", "Values"], rows, {"Detection": 115})) if rows else []
+    return _section("Detections", _table(["Detection", "Values"], rows, frozenset({0}))) if rows else []
 
 
 def _ioc_summary(iocs: dict[str, Any]) -> list[str]:
     present = [(label, len(iocs.get(key) or [])) for key, _value_key, label in _IOC_TYPES if iocs.get(key)]
     if not present:
         return []
+    every_column = frozenset(range(len(present)))
     return _section(
-        "IOC Summary", _table([_nowrap(label) for label, _ in present], [[f"**{n}**" for _, n in present]])
+        "IOC Summary", _table([label for label, _ in present], [[f"<b>{n}</b>" for _, n in present]], every_column)
     )
 
 
@@ -245,13 +256,13 @@ def _threat_indicators(vtis: list[dict[str, Any]]) -> list[str]:
     rows = [
         [
             _score(vti.get("score")),
-            _nowrap(_text(vti.get("category") or "—")),
-            _text(vti.get("operation") or "—"),
-            _text(", ".join(vti.get("classifications") or []) or "—"),
+            _h(vti.get("category") or "—"),
+            _h(vti.get("operation") or "—"),
+            _h(", ".join(vti.get("classifications") or []) or "—"),
         ]
         for vti in sorted(vtis, key=lambda v: v.get("score") or 0, reverse=True)
     ]
-    table = _table(["Score", "Category", "Operation", "Classification"], rows, {"Score": 45, "Category": 110})
+    table = _table(["Score", "Category", "Operation", "Classification"], rows, frozenset({0, 1}))
     return _section("VMRay Threat Identifiers", table)
 
 
@@ -263,12 +274,12 @@ def _mitre(techniques: list[dict[str, Any]]) -> list[str]:
     rows = [
         [
             _mitre_link(t["technique_id"]) if t.get("technique_id") else "—",
-            _text(t.get("technique") or "—"),
-            _text(", ".join(t.get("tactics") or []) or "—"),
+            _h(t.get("technique") or "—"),
+            _h(", ".join(t.get("tactics") or []) or "—"),
         ]
         for t in techniques
     ]
-    details = _toggle(_table(["ID", "Technique", "Tactics"], rows, {"ID": 85}), label="Details", expanded=False)
+    details = _toggle(_table(["ID", "Technique", "Tactics"], rows, frozenset({0})), label="Details", expanded=False)
     return _section("MITRE ATT&CK", [buttons, *details])
 
 
@@ -283,20 +294,16 @@ def _iocs(iocs: dict[str, Any]) -> list[str]:
                 value = ", ".join(str(v) for v in value)
             rows.append(
                 [
-                    _text((item.get("ioc_type") or key).upper()),
-                    _code(value) if value else "—",
+                    _h((item.get("ioc_type") or key).upper()),
+                    _code_html(value) if value else "—",
                     _verdict(item.get("verdict")) if item.get("verdict") else "—",
                 ]
             )
         omitted += max(0, len(items) - _MAX_ROWS)
     if not rows:
         return []
-    table = [
-        *_header(["Type", "Value", "Verdict"], {"Type": 120, "Verdict": 95}),
-        *("| " + " | ".join(row) + " |" for row in rows),
-    ]
-    if omitted:
-        table.append(f"| _…and {omitted} more_ | | |")
+    # capped per IOC type above, so every type shows up; not capped again overall
+    table = _table(["Type", "Value", "Verdict"], rows, frozenset({0, 2}), limit=None, omitted=omitted)
     return _section("Indicators of Compromise", table)
 
 
@@ -305,16 +312,14 @@ def _analyses(analyses: list[dict[str, Any]]) -> list[str]:
         return []
     rows = [
         [
-            _text(a.get("analysis_analyzer_name") or "—"),
-            _text(a.get("analysis_vm_description") or "—"),
-            _nowrap(_text(_date(a["analysis_created"]))) if a.get("analysis_created") else "—",
+            _h(a.get("analysis_analyzer_name") or "—"),
+            _h(a.get("analysis_vm_description") or "—"),
+            _h(_date(a["analysis_created"])) if a.get("analysis_created") else "—",
             _verdict(a.get("analysis_verdict")),
         ]
         for a in sorted(analyses, key=lambda a: a.get("analysis_created") or "", reverse=True)
     ]
-    table = _table(
-        ["Analysis", "Target Environment", "Created", "Verdict"], rows, {"Analysis": 85, "Created": 145, "Verdict": 95}
-    )
+    table = _table(["Analysis", "Target Environment", "Created", "Verdict"], rows, frozenset({0, 2, 3}))
     return _section("Analyses", table)
 
 

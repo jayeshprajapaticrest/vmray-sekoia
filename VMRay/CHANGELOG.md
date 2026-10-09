@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-09 - 4.0.0
+
+### Added
+
+- `BuildReport` — `include_screenshots` argument: on (default) or off; screenshots of the submitted URL or looked-up hash only, never of their child samples.
+- `ExtractIocs` — `ioc_severity_filter` (default `malicious`) and `include_child_iocs` (default `true`) arguments.
+
+### Changed
+
+- `ReportToIndicators` renamed `ExtractIocs` ("Extract IOCs"). Sekoia derives an action's UUID from its name, so playbook nodes using the old action must be replaced.
+- `ExtractIocs` — each IOC is now judged on its own severity, no longer on the verdict of the sample it came from.
+- `SubmitUrlSample` — argument descriptions, types and defaults follow the Cortex-Analyzers VMRay analyzer's configuration; `max_recursive_samples` defaults to 10 and is always sent.
+- `BuildReport` — `ioc_severity_filter` is a list: exactly one of `malicious` / `suspicious` filters, none or both fetch everything; `analysis_verdict_filter` ignores values other than `malicious` / `suspicious` / `clean`; `max_recursion_depth` defaults to 10, as in the analyzer.
+- `RenderReport` — tables are HTML: labels, types, verdicts and dates no longer wrap, long hashes and URLs wrap inside their own cell, and every cell is aligned to the top left.
+- `RenderReport` — `max_comment_kb` defaults to 512.
+- `RenderReport` — Overview no longer shows the VTI score.
+- Every action — inputs show a clear title and description in the playbook editor; optional inputs no longer appear without a title.
+
+### Removed
+
+- `ReportToIndicators` — `verdicts` and `include_child_samples` arguments, replaced by `ioc_severity_filter` and `include_child_iocs` on `ExtractIocs`.
+- `BuildReport` — `screenshot_mode` argument, replaced by `include_screenshots`; child samples' screenshots can no longer be included.
+- `SubmitUrlSample` — `archive_action` and `archive_password` arguments: they only apply to submitted files.
+
 ## 2026-10-07 - 3.2.2
 
 ### Changed

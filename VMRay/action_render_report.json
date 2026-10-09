@@ -5,37 +5,21 @@
   "docker_parameters": "RenderReport",
   "arguments": {
     "properties": {
-      "report": {
-        "anyOf": [
-          {
-            "additionalProperties": true,
-            "type": "object"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "A Build report result ({samples, errors}), given inline.",
-        "title": "Report"
-      },
       "report_path": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "default": null,
-        "description": "Path (on data_path) of the report file \u2014 Build report's `report_path`.",
-        "title": "Report Path"
+        "description": "The report file written by Build report \u2014 its `report_path` result.",
+        "title": "Report path",
+        "type": "string"
+      },
+      "report": {
+        "additionalProperties": true,
+        "description": "The report itself, instead of Report path. Only for small reports: a report with screenshots exceeds Sekoia's size limit on action inputs.",
+        "title": "Report (inline)",
+        "type": "object"
       },
       "max_comment_kb": {
-        "default": 256,
-        "description": "Maximum size (KB) of each screenshot comment. Sekoia rejects playbook action arguments above an undocumented size (SYM216), so screenshots are split across comments that each stay under this.",
-        "title": "Max Comment Kb",
+        "default": 512,
+        "description": "Maximum size of each screenshot comment. Screenshots are split across as many comments as needed to stay under it \u2014 Sekoia rejects larger action inputs (SYM216).",
+        "title": "Max comment size (KB)",
         "type": "integer"
       }
     },

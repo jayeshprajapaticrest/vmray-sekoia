@@ -1,20 +1,20 @@
 import pytest
 from sekoia_automation.exceptions import MissingActionArgumentError
 
+from vmray_modules.extract_iocs_action import ExtractIocs, extract_iocs, iocs_to_indicators
 from vmray_modules.models import IOCSet
-from vmray_modules.report_to_indicators_action import ReportToIndicators, iocs_to_indicators, report_to_indicators
 
 CLEAN_CHILD = {
     "sample_id": 44,
     "sample_verdict": "clean",
     "sample_sha256hash": "e" * 64,
-    "sample_iocs": {"iocs": {"domains": [{"domain": "cdn.example"}]}},
+    "sample_iocs": {"iocs": {"domains": [{"domain": "cdn.example", "severity": "suspicious"}]}},
 }
 MALICIOUS_CHILD = {
     "sample_id": 43,
     "sample_verdict": "malicious",
     "sample_sha256hash": "d" * 64,
-    "sample_iocs": {"iocs": {"ips": [{"ip_address": "203.0.113.9"}]}},
+    "sample_iocs": {"iocs": {"ips": [{"ip_address": "203.0.113.9", "severity": "malicious"}]}},
     "sample_child_samples": [CLEAN_CHILD],
 }
 REPORT = {
@@ -25,16 +25,17 @@ REPORT = {
             "sample_sha256hash": "a" * 64,
             "sample_iocs": {
                 "iocs": {
-                    "domains": [{"domain": "evil.example"}],
-                    "files": [{"filename": "dropped.exe", "hashes": [{"sha256_hash": "f" * 64}]}],
+                    "domains": [
+                        {"domain": "evil.example", "severity": "malicious"},
+                        {"domain": "sus.example", "severity": "suspicious"},
+                        {"domain": "unrated.example"},
+                    ],
+                    "files": [
+                        {"filename": "dropped.exe", "severity": "malicious", "hashes": [{"sha256_hash": "f" * 64}]}
+                    ],
                 }
             },
             "sample_child_samples": [MALICIOUS_CHILD],
-        },
-        {
-            "sample_id": 50,
-            "sample_verdict": "suspicious",
-            "sample_iocs": {"iocs": {"domains": [{"domain": "sus.example"}]}},
         },
     ]
 }
@@ -44,60 +45,77 @@ def values(indicators):
     return {(i.type, i.value) for i in indicators}
 
 
-def test_only_malicious_samples_contribute_by_default():
-    result = values(report_to_indicators(REPORT, ["malicious"], include_child_samples=True))
+def test_only_malicious_iocs_by_default():
+    result = values(extract_iocs(REPORT, ["malicious"], include_child_iocs=True))
 
     assert ("domain", "evil.example") in result
     assert ("hash", "f" * 64) in result  # dropped file from the IOC set
-    assert ("IP address", "203.0.113.9") in result  # malicious child's IOCs
+    assert ("IP address", "203.0.113.9") in result  # malicious IOC of a child sample
     assert ("hash", "d" * 64) in result  # malicious child's own SHA256
-    assert ("domain", "cdn.example") not in result  # clean grandchild judged on its own verdict
-    assert ("domain", "sus.example") not in result  # suspicious top-level sample
+    assert ("domain", "sus.example") not in result  # suspicious IOC
+    assert ("domain", "unrated.example") not in result  # no severity
+    assert ("domain", "cdn.example") not in result  # suspicious IOC of the clean grandchild
+    assert ("hash", "e" * 64) not in result  # clean grandchild's SHA256
+
+
+def test_both_severities():
+    result = values(extract_iocs(REPORT, ["malicious", "Suspicious"], include_child_iocs=True))
+
+    assert {("domain", "evil.example"), ("domain", "sus.example"), ("domain", "cdn.example")} <= result
+    assert ("domain", "unrated.example") not in result
+    assert ("hash", "e" * 64) not in result  # the grandchild itself is clean
+
+
+def test_empty_filter_extracts_every_ioc():
+    result = values(extract_iocs(REPORT, [], include_child_iocs=True))
+
+    assert {("domain", "unrated.example"), ("domain", "cdn.example"), ("hash", "e" * 64)} <= result
+
+
+def test_unknown_severities_are_ignored():
+    """The analyzer's rule: only 'malicious' and 'suspicious' count; with none left, nothing is filtered."""
+    assert values(extract_iocs(REPORT, ["bogus"], include_child_iocs=True)) == values(
+        extract_iocs(REPORT, [], include_child_iocs=True)
+    )
 
 
 def test_top_level_sample_hash_is_not_added():
     """The top-level sample is the alert's own observable — only child samples add their SHA256."""
-    result = values(report_to_indicators(REPORT, ["malicious"], include_child_samples=True))
+    result = values(extract_iocs(REPORT, [], include_child_iocs=True))
 
     assert ("hash", "a" * 64) not in result
 
 
-def test_children_can_be_excluded():
-    result = values(report_to_indicators(REPORT, ["malicious"], include_child_samples=False))
+def test_child_iocs_can_be_excluded():
+    result = values(extract_iocs(REPORT, ["malicious"], include_child_iocs=False))
 
     assert ("IP address", "203.0.113.9") not in result
     assert ("hash", "d" * 64) not in result
     assert ("domain", "evil.example") in result
 
 
-def test_empty_verdicts_means_every_sample():
-    result = values(report_to_indicators(REPORT, [], include_child_samples=True))
-
-    assert ("domain", "sus.example") in result
-    assert ("domain", "cdn.example") in result
-
-
 def test_indicators_are_deduplicated():
     report = {
         "samples": [
-            {"sample_verdict": "malicious", "sample_iocs": {"iocs": {"domains": [{"domain": "evil.example"}]}}},
-            {"sample_verdict": "malicious", "sample_iocs": {"iocs": {"domains": [{"domain": "evil.example"}]}}},
+            {"sample_iocs": {"iocs": {"domains": [{"domain": "evil.example", "severity": "malicious"}]}}},
+            {"sample_iocs": {"iocs": {"domains": [{"domain": "evil.example", "severity": "malicious"}]}}},
         ]
     }
 
-    assert len(report_to_indicators(report, ["malicious"], include_child_samples=True)) == 1
+    assert len(extract_iocs(report, ["malicious"], include_child_iocs=True)) == 1
 
 
-def test_action_defaults_to_malicious_only():
-    result = ReportToIndicators().run({"report": REPORT})
+def test_action_defaults_to_malicious_iocs_and_children():
+    result = ExtractIocs().run({"report": REPORT})
 
     assert {"type": "domain", "value": "evil.example"} in result["indicators"]
+    assert {"type": "IP address", "value": "203.0.113.9"} in result["indicators"]
     assert {"type": "domain", "value": "sus.example"} not in result["indicators"]
 
 
 def test_action_groups_indicators_by_type():
     """One group per non-empty type, in push order — the playbook's Foreach makes one add_ioc call per group."""
-    result = ReportToIndicators().run({"report": REPORT})
+    result = ExtractIocs().run({"report": REPORT})
 
     assert result["indicator_groups"] == [
         {"type": "hash", "indicators": ["f" * 64, "d" * 64]},
@@ -107,7 +125,7 @@ def test_action_groups_indicators_by_type():
 
 
 def test_action_has_no_groups_without_indicators():
-    result = ReportToIndicators().run({"report": {"samples": [{"sample_verdict": "clean"}]}})
+    result = ExtractIocs().run({"report": {"samples": [{"sample_verdict": "clean"}]}})
 
     assert result["indicators"] == []
     assert result["indicator_groups"] == []
@@ -115,7 +133,7 @@ def test_action_has_no_groups_without_indicators():
 
 def test_action_requires_a_report():
     with pytest.raises(MissingActionArgumentError):
-        ReportToIndicators().run({})
+        ExtractIocs().run({})
 
 
 # -- iocs_to_indicators: per-category mapping and hash extraction (moved from the removed IocsToIndicators) --

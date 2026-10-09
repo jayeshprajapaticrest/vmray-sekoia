@@ -15,8 +15,6 @@ _FORM_OPTIONS = {
     "known_malicious",
     "known_benign",
     "max_jobs",
-    "archive_action",
-    "archive_password",
     "shareable",
     "max_recursive_samples",
 }

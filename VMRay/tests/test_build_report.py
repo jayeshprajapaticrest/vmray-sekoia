@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 from sekoia_automation.exceptions import MissingActionArgumentError
 
-from vmray_modules.build_report_action import BuildReport
+from vmray_modules.build_report_action import BuildReport, ioc_severity
 from vmray_modules.models import VMRayConfiguration, VMRayModule
 
 BASE_URL = "https://eu.cloud.vmray.com"
@@ -66,7 +66,10 @@ def mock_full_sample(requests_mock, sample_id, children=(), latest_submission=Tr
     r.get(f"{BASE_URL}/rest/analysis/sample/{sample_id}", json=ok([{"analysis_id": 9, "analysis_verdict": "clean"}]))
     r.get(f"{BASE_URL}/rest/sample/{sample_id}/vtis", json=ok({"threat_indicators": [{"operation": "x", "score": 5}]}))
     r.get(f"{BASE_URL}/rest/sample/{sample_id}/mitre_attack", json=ok({"mitre_attack_techniques": [{"id": "T1055"}]}))
-    r.get(f"{BASE_URL}/rest/sample/{sample_id}/iocs", json=ok({"iocs": {"urls": [{"url": "http://evil.example"}]}}))
+    r.get(
+        f"{BASE_URL}/rest/sample/{sample_id}/iocs",
+        json=ok({"iocs": {"urls": [{"url": "http://evil.example", "severity": "malicious"}]}}),
+    )
     r.get(
         f"{BASE_URL}/rest/sample/{sample_id}/classifications",
         json=ok(
@@ -158,12 +161,23 @@ def test_duplicate_ids_build_once(requests_mock):
     assert len(result["samples"]) == 1
 
 
-def test_default_depth_builds_direct_children_only(requests_mock):
+def test_default_depth_builds_the_whole_hierarchy(requests_mock):
+    """The analyzer's default: 10 levels."""
+    mock_full_sample(requests_mock, 42, children=[43])
+    mock_full_sample(requests_mock, 43, children=[44])
+    mock_full_sample(requests_mock, 44)
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["sample_child_samples"][0]["sample_child_samples"][0]["sample_id"] == 44
+
+
+def test_depth_one_builds_direct_children_only(requests_mock):
     mock_full_sample(requests_mock, 42, children=[43])
     mock_full_sample(requests_mock, 43, children=[44])
     # no mocks for 44 — building a grandchild would raise NoMockAddress
 
-    sample = build({"sample_ids": [42]})["samples"][0]
+    sample = build({"sample_ids": [42], "max_recursion_depth": 1})["samples"][0]
 
     child = sample["sample_child_samples"][0]
     assert child["sample_id"] == 43
@@ -204,11 +218,35 @@ def test_filters_are_forwarded(requests_mock):
     mock_full_sample(requests_mock, 42)
     iocs = requests_mock.get(f"{BASE_URL}/rest/sample/42/iocs", json=ok({"iocs": {}}))
 
-    arguments = {"sample_ids": [42], "ioc_severity_filter": "malicious", "analysis_verdict_filter": ["Malicious"]}
+    arguments = {"sample_ids": [42], "ioc_severity_filter": ["Malicious"], "analysis_verdict_filter": ["Malicious"]}
     sample = build(arguments)["samples"][0]
 
     assert iocs.last_request.qs == {"ioc_severity": ["malicious"]}
     assert [a["analysis_id"] for a in sample["sample_analyses"]] == [1]
+
+
+@pytest.mark.parametrize(
+    "values,expected",
+    [
+        ([], None),
+        (["malicious"], "malicious"),
+        ([" Suspicious "], "suspicious"),
+        (["malicious", "suspicious"], None),
+        (["clean"], None),
+        (["malicious", "bogus"], "malicious"),
+    ],
+)
+def test_ioc_severity_follows_the_analyzer(values, expected):
+    """Exactly one valid severity filters; none or both fetch everything; other values are ignored."""
+    assert ioc_severity(values) == expected
+
+
+def test_unknown_analysis_verdicts_are_ignored(requests_mock):
+    mock_full_sample(requests_mock, 42)
+
+    sample = build({"sample_ids": [42], "analysis_verdict_filter": ["bogus"]})["samples"][0]
+
+    assert [a["analysis_id"] for a in sample["sample_analyses"]] == [1, 2]  # as if empty: nothing filtered out
 
 
 def test_unfetchable_child_is_recorded_on_the_parent(requests_mock):
@@ -290,25 +328,24 @@ def test_every_screenshot_is_embedded_no_size_cap(requests_mock):
     assert "screenshots_truncated" not in sample
 
 
-def test_screenshot_mode_none_fetches_nothing(requests_mock):
+def test_include_screenshots_false_fetches_nothing(requests_mock):
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"a.png": png(10, 10)}})
 
-    sample = build({"sample_ids": [42], "screenshot_mode": "none"})["samples"][0]
+    sample = build({"sample_ids": [42], "include_screenshots": False})["samples"][0]
 
     assert archive_calls(requests_mock) == []
     assert sample["has_screenshots"] is False
 
 
-def test_parent_only_skips_children_and_all_includes_them(requests_mock):
+def test_only_the_submitted_or_looked_up_sample_gets_screenshots(requests_mock):
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: {"a.png": png(10, 10)}}, children=[43])
     mock_screenshot_sample(requests_mock, 43, [{"analysis_id": 2}], {2: {"c.png": png(10, 10)}})
 
-    parent_only = build({"sample_ids": [42]})["samples"][0]
-    assert parent_only["has_screenshots"] is True
-    assert parent_only["sample_child_samples"][0]["has_screenshots"] is False
+    sample = build({"sample_ids": [42]})["samples"][0]
 
-    everything = build({"sample_ids": [42], "screenshot_mode": "all"})["samples"][0]
-    assert everything["sample_child_samples"][0]["has_screenshots"] is True
+    assert sample["has_screenshots"] is True
+    assert sample["sample_child_samples"][0]["has_screenshots"] is False
+    assert not any("/analysis/2/" in path for path in archive_calls(requests_mock))  # child's archive never read
 
 
 def test_unreadable_screenshot_is_skipped_and_the_rest_kept(requests_mock):
@@ -345,13 +382,13 @@ def test_only_a_summary_travels_inline_the_report_is_a_file(requests_mock, stora
     assert report["samples"][0]["sample_id"] == 42
 
 
-def test_report_file_feeds_render_report_and_report_to_indicators(requests_mock, storage):
+def test_report_file_feeds_render_report_and_extract_iocs(requests_mock, storage):
+    from vmray_modules.extract_iocs_action import ExtractIocs
     from vmray_modules.render_report_action import RenderReport
-    from vmray_modules.report_to_indicators_action import ReportToIndicators
 
     mock_full_sample(requests_mock, 42)
     report_path = make_action().run({"sample_ids": [42]})["report_path"]
 
     assert "<b>VMRay Report</b>" in RenderReport().run({"report_path": report_path})["content"]
-    indicators = ReportToIndicators().run({"report_path": report_path})["indicators"]
+    indicators = ExtractIocs().run({"report_path": report_path})["indicators"]
     assert {"type": "url", "value": "http://evil.example"} in indicators
