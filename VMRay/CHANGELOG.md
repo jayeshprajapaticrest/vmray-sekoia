@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-12 - 4.1.2
+
+### Added
+
+- Playbook template `playbooks/templates/vmray_report_on_demand.json`: the "Report on demand" playbook in the SEKOIA-IO/Community template format, without tenant-specific identifiers, listed in `playbooks/templates/playbooks.json`. Documented in the README.
+
+### Changed
+
+- `BuildReport` — screenshots are re-encoded as JPEG at quality 85 instead of 75, so text in them blurs less.
+
 ## 2026-10-09 - 4.1.1
 
 ### Fixed

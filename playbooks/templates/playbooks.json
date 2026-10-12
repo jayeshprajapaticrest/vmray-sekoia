@@ -1,0 +1,13 @@
+[
+  {
+    "file": "vmray_report_on_demand.json",
+    "name": "VMRay: Report on demand (hash lookup + URL detonation)",
+    "tags": [
+      "Alerts",
+      "Enrichment",
+      "VMRay"
+    ],
+    "workspace": "Operation Center",
+    "description": "Look up the alert's file hashes and detonate its URL in VMRay, post the full report with screenshots as alert comments, and push the malicious IOCs to an IOC collection"
+  }
+]

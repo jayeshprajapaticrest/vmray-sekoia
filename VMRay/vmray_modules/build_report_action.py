@@ -44,10 +44,10 @@ from vmray_modules.models import BuildReportArguments, BuildReportResults, Repor
 
 _MAX_WORKERS = 4
 
-# Smaller than the analyzer's 1280px / quality 82: a Sekoia comment cannot zoom an
-# image the way TheHive's modal does, and a smaller image fits more of them in a comment.
+# Narrower than the analyzer's 1280px, so more fit in a comment; quality 85 (the
+# analyzer uses 82) keeps text in the screenshot from blurring into JPEG artifacts.
 _SCREENSHOT_MAX_WIDTH = 800
-_SCREENSHOT_QUALITY = 75
+_SCREENSHOT_QUALITY = 85
 
 
 def run_concurrently(tasks: dict[str, Callable[[], Any]]) -> tuple[dict[str, Any], dict[str, str]]:

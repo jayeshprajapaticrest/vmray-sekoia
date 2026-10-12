@@ -150,6 +150,12 @@ Each Foreach (screenshot comments, IOC types) sits behind a condition that skips
 
 Loops over the alert's events and runs the same workflow per event. **Not usable yet:** Sekoia does not resolve a node inside a Foreach loop from a Foreach nested in it, so the screenshot comments and the IOC push inside the event loop fail or are skipped. See the limitation below.
 
+### Playbook template — `playbooks/templates/vmray_report_on_demand.json`
+
+The "Report on demand" playbook as a shareable Sekoia playbook template, in the format of the [SEKOIA-IO/Community](https://github.com/SEKOIA-IO/Community) repository (`playbooks/templates/`, listed in `playbooks/templates/playbooks.json`). It carries none of a tenant's own identifiers — no `trigger_configuration_uuid`, `module_configuration_uuid` or `community_uuid` — and its IOC collection is the placeholder `ioc-collection--xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
+
+After importing it: select your VMRay module configuration on the VMRay nodes, and set `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes.
+
 ## Known limitations
 
 **Comments are styled with HTML Sekoia allows, not CSS.** Sekoia renders comments as GitHub-flavoured markdown and strips `style` attributes and `<style>` blocks. Colours use `<font color>`, collapsible sections use `<details>`, and short table columns keep their width through an invisible spacer image in the header.
