@@ -150,11 +150,18 @@ Each Foreach (screenshot comments, IOC types) sits behind a condition that skips
 
 Loops over the alert's events and runs the same workflow per event. **Not usable yet:** Sekoia does not resolve a node inside a Foreach loop from a Foreach nested in it, so the screenshot comments and the IOC push inside the event loop fail or are skipped. See the limitation below.
 
-### Playbook template — `playbooks/templates/vmray_report_on_demand.json`
+### Playbook templates — `playbooks/templates/`
 
-The "Report on demand" playbook as a shareable Sekoia playbook template, in the format of the [SEKOIA-IO/Community](https://github.com/SEKOIA-IO/Community) repository (`playbooks/templates/`, listed in `playbooks/templates/playbooks.json`). It carries none of a tenant's own identifiers — no `trigger_configuration_uuid`, `module_configuration_uuid` or `community_uuid` — and its IOC collection is the placeholder `ioc-collection--xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
+The "Report on demand" and "Report on alert creation" playbooks as shareable Sekoia playbook templates, in the format of the [SEKOIA-IO/Community](https://github.com/SEKOIA-IO/Community) repository (listed in `playbooks/templates/playbooks.json`):
 
-After importing it: select your VMRay module configuration on the VMRay nodes, and set `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes.
+| Template | Trigger |
+|---|---|
+| `vmray_report_on_demand.json` | Manual — an analyst runs it on an alert |
+| `vmray_report_on_alert_creation.json` | Alert Created — runs on every new alert |
+
+They carry none of a tenant's own identifiers — no `trigger_configuration_uuid`, `module_configuration_uuid` or `community_uuid` — and their IOC collection is the placeholder `ioc-collection--xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`.
+
+After importing one: select your VMRay module configuration on the VMRay nodes, and set `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes. For the alert-creation template, consider limiting the trigger to specific rules — every URL detonation consumes quota.
 
 ## Known limitations
 

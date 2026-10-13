@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-13 - 4.1.3
+
+### Added
+
+- Playbook template `playbooks/templates/vmray_report_on_alert_creation.json`: the "Report on alert creation" playbook (Alert Created trigger) in the SEKOIA-IO/Community template format, without tenant-specific identifiers, listed in `playbooks/templates/playbooks.json`. Documented in the README.
+
+### Changed
+
+- Playbook template `vmray_report_on_demand.json` — aligned with the "Report on demand" playbook: name "VMRay: Report on demand (Hash + URL)", its description, Get Events limit 100, and capitalized node names.
+
 ## 2026-10-12 - 4.1.2
 
 ### Added

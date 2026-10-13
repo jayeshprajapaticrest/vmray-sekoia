@@ -9,4 +9,4 @@ VMRay integration for Sekoia.io: a Sekoia automation module and the playbooks th
 | [`VMRay/`](VMRay/) | The automation module. [`VMRay/README.md`](VMRay/README.md) covers configuration, actions, playbooks, the comment layout, known limitations and development. |
 | [`VMRay/CHANGELOG.md`](VMRay/CHANGELOG.md) | Release history. |
 | [`playbooks/`](playbooks/) | Sekoia playbooks to import — described in [`VMRay/README.md`](VMRay/README.md#playbooks). |
-| [`playbooks/templates/`](playbooks/templates/) | The "Report on demand" playbook as a Sekoia playbook template, without tenant-specific identifiers. |
+| [`playbooks/templates/`](playbooks/templates/) | The "Report on demand" and "Report on alert creation" playbooks as Sekoia playbook templates, without tenant-specific identifiers. |

@@ -1,5 +1,5 @@
 {
-  "name": "VMRay: Report on demand (hash lookup + URL detonation)",
+  "name": "VMRay: Report on demand (Hash + URL)",
   "uuid": "84abc5e0-5b1c-4bc8-82bf-bab447bd7f24",
   "tags": [
     "Alerts",
@@ -56,7 +56,7 @@
         "y": 1972
       },
       "arguments": {
-        "limit": 10,
+        "limit": 100,
         "query": "alert_short_ids: \"{{ node.2['short_id'] }}\"",
         "latest_time": "{{ node.2['last_seen_at'] }}",
         "earliest_time": "{{ node.2['first_seen_at'] }}"
@@ -65,7 +65,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "4": {
-      "name": "Extract file hashes (first event)",
+      "name": "Extract File Hashes",
       "type": "action",
       "outputs": {
         "default": [
@@ -86,7 +86,7 @@
       "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
     },
     "6": {
-      "name": "Extract URL (url.original, first event)",
+      "name": "Extract URL",
       "type": "action",
       "outputs": {
         "default": [
@@ -109,7 +109,7 @@
       "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
     },
     "7": {
-      "name": "Nothing to enrich?",
+      "name": "Nothing to Enrich?",
       "type": "operator",
       "cases": [
         {
@@ -133,7 +133,7 @@
       }
     },
     "8": {
-      "name": "Hash found?",
+      "name": "Hash Found?",
       "type": "operator",
       "cases": [
         {
@@ -157,7 +157,7 @@
       }
     },
     "9": {
-      "name": "VMRay: Get samples by hash",
+      "name": "VMRay: Get Samples By Hash",
       "type": "action",
       "outputs": {
         "found": [
@@ -178,7 +178,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "10": {
-      "name": "VMRay: Build report (hash)",
+      "name": "VMRay: Build Report (Hash)",
       "type": "action",
       "outputs": {
         "default": [
@@ -198,7 +198,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "11": {
-      "name": "VMRay: Render report (hash)",
+      "name": "VMRay: Render Report (Hash)",
       "type": "action",
       "outputs": {
         "default": [
@@ -217,7 +217,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "12": {
-      "name": "Comment Alert (hash)",
+      "name": "Comment Alert (Hash)",
       "type": "action",
       "outputs": {
         "default": [
@@ -238,7 +238,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "13": {
-      "name": "VMRay: Extract IOCs (hash)",
+      "name": "VMRay: Extract IOCs (Hash)",
       "type": "action",
       "outputs": {
         "default": [
@@ -256,7 +256,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "14": {
-      "name": "Foreach indicator type (hash)",
+      "name": "Foreach Indicator Type (Hash)",
       "type": "operator",
       "subtype": "foreach",
       "items": "{{ node.13['indicator_groups'] }}",
@@ -272,7 +272,7 @@
       }
     },
     "15": {
-      "name": "Add IOCs to IOC Collection (hash)",
+      "name": "Add IOCs to IOC Collection (Hash)",
       "type": "action",
       "outputs": {
         "default": []
@@ -291,7 +291,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "16": {
-      "name": "URL found?",
+      "name": "URL Found?",
       "type": "operator",
       "cases": [
         {
@@ -315,7 +315,7 @@
       }
     },
     "17": {
-      "name": "VMRay: Submit URL sample",
+      "name": "VMRay: Submit URL Sample",
       "type": "action",
       "outputs": {
         "completed": [
@@ -340,7 +340,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "18": {
-      "name": "VMRay: Build report (URL)",
+      "name": "VMRay: Build Report (URL)",
       "type": "action",
       "outputs": {
         "default": [
@@ -360,7 +360,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "19": {
-      "name": "VMRay: Render report (URL)",
+      "name": "VMRay: Render Report (URL)",
       "type": "action",
       "outputs": {
         "default": [
@@ -418,7 +418,7 @@
       "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
     },
     "22": {
-      "name": "Foreach indicator type (URL)",
+      "name": "Foreach Indicator Type (URL)",
       "type": "operator",
       "subtype": "foreach",
       "items": "{{ node.21['indicator_groups'] }}",
@@ -453,7 +453,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "24": {
-      "name": "Comment Alert (hashes unknown)",
+      "name": "Comment Alert (Hashes Unknown)",
       "type": "action",
       "outputs": {
         "default": []
@@ -471,7 +471,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "25": {
-      "name": "Comment Alert (nothing to enrich)",
+      "name": "Comment Alert (Nothing to Enrich)",
       "type": "action",
       "outputs": {
         "default": []
@@ -489,7 +489,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "26": {
-      "name": "Comment Alert (detonation incomplete)",
+      "name": "Comment Alert (Detonation Incomplete)",
       "type": "action",
       "outputs": {
         "default": []
@@ -507,7 +507,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "27": {
-      "name": "Foreach screenshot comment (hash)",
+      "name": "Foreach Screenshot Comment (Hash)",
       "type": "operator",
       "subtype": "foreach",
       "items": "{{ node.11['screenshot_comments'] }}",
@@ -523,7 +523,7 @@
       }
     },
     "28": {
-      "name": "Comment Alert (screenshots, hash)",
+      "name": "Comment Alert (Screenshots, Hash)",
       "type": "action",
       "outputs": {
         "default": []
@@ -541,7 +541,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "29": {
-      "name": "Foreach screenshot comment (URL)",
+      "name": "Foreach Screenshot Comment (URL)",
       "type": "operator",
       "subtype": "foreach",
       "items": "{{ node.19['screenshot_comments'] }}",
@@ -557,7 +557,7 @@
       }
     },
     "30": {
-      "name": "Comment Alert (screenshots, URL)",
+      "name": "Comment Alert (Screenshots, URL)",
       "type": "action",
       "outputs": {
         "default": []
@@ -575,7 +575,7 @@
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
     },
     "31": {
-      "name": "Indicators to push? (hash)",
+      "name": "Indicators to Push? (Hash)",
       "type": "operator",
       "cases": [
         {
@@ -599,7 +599,7 @@
       }
     },
     "32": {
-      "name": "Indicators to push? (URL)",
+      "name": "Indicators to Push? (URL)",
       "type": "operator",
       "cases": [
         {
@@ -623,7 +623,7 @@
       }
     },
     "33": {
-      "name": "Screenshots? (hash)",
+      "name": "Screenshots? (Hash)",
       "type": "operator",
       "cases": [
         {
