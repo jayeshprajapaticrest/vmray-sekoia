@@ -232,7 +232,7 @@
       "arguments": {
         "uuid": "{{ node.0['alert_uuid'] }}",
         "author": "VMRay",
-        "content": "{{ node.11['content'] }}"
+        "content": "{{ node.11['content'] }}{% if node.9['not_found'] or node.9['errors'] %}<p><b>Not in this report</b></p>{% if node.9['not_found'] %}<p>VMRay has never analysed these file hash(es) from the alert:</p><ul>{% for h in node.9['not_found'] %}<li><code>{{ h | e }}</code></li>{% endfor %}</ul>{% endif %}{% if node.9['errors'] %}<p>Lookup failed for:</p><ul>{% for h in node.9['errors'] %}<li><code>{{ h | e }}</code> — <code>{{ node.9['errors'][h] | e }}</code></li>{% endfor %}</ul>{% endif %}{% endif %}"
       },
       "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
@@ -465,7 +465,7 @@
       "arguments": {
         "uuid": "{{ node.0['alert_uuid'] }}",
         "author": "VMRay",
-        "content": "**VMRay: no known sample** — no quota spent.\n\n{% if node.9['not_found'] %}VMRay has never analysed these file hash(es) from the alert:\n{% for h in node.9['not_found'] %}\n- `{{ h | replace('`', \"'\") }}`{% endfor %}{% endif %}{% if node.9['errors'] %}\n\nLookup failed for:\n{% for h in node.9['errors'] %}\n- `{{ h | replace('`', \"'\") }}` — `{{ node.9['errors'][h] | replace('`', \"'\") }}`{% endfor %}{% endif %}"
+        "content": "**VMRay: no known sample** - no quota spent.\n\n{% if node.9['not_found'] %}VMRay has never analysed these file hash(es) from the alert:\n{% for h in node.9['not_found'] %}\n- `{{ h | replace('`', \"'\") }}`{% endfor %}{% endif %}{% if node.9['errors'] %}\n\nLookup failed for:\n{% for h in node.9['errors'] %}\n- `{{ h | replace('`', \"'\") }}` — `{{ node.9['errors'][h] | replace('`', \"'\") }}`{% endfor %}{% endif %}"
       },
       "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
       "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"

@@ -102,7 +102,7 @@ Turns a report into the alert comment, laid out like the VMRay TheHive report.
   | Screenshots | how many screenshots were posted in the screenshot comments |
   | Child Samples | a collapsible tree: one row per child sample (verdict, name, type, children, link), children indented under their parent |
 
-  Tables are capped at 20 rows ("…and N more"); the VMRay report link has the rest. When several samples are reported, each starts with "Sample i of N". A section that failed to load is named in a "Partial data" note.
+  Every table shows all its rows. When several samples are reported, each starts with "Sample i of N". A section that failed to load is named in a "Partial data" note.
 
 - `screenshot_comments` — the screenshots, grouped per analysis, each behind its own toggle that opens the image at the comment's full width. Split into as many comments as needed, each at most `max_comment_kb` and titled "VMRay Screenshots (i/N)"; post them with a Foreach. Sekoia rejects a playbook action argument above an undocumented size (SYM216), and Comment Alert only takes inline text, so one comment cannot hold them all.
 

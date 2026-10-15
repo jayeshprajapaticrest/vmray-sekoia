@@ -286,11 +286,20 @@ def test_no_samples():
     assert render_report({"samples": []}) == title("VMRay Report", 5) + "\n\n**No matches found for this sample.**"
 
 
-def test_long_tables_are_capped():
-    vtis = [{"score": 1, "operation": f"rule {i}"} for i in range(25)]
-    content = render_report({"samples": [{"sample_id": 1, "sample_threat_indicators": {"threat_indicators": vtis}}]})
+def test_long_tables_show_every_row():
+    vtis = [{"score": 1, "operation": f"rule {i}"} for i in range(45)]
+    files = [{"ioc_type": "file", "filename": f"drop{i}.exe", "verdict": "suspicious"} for i in range(30)]
+    sample = {
+        "sample_id": 1,
+        "sample_threat_indicators": {"threat_indicators": vtis},
+        "sample_iocs": {"iocs": {"files": files}},
+    }
 
-    assert '<tr><td colspan="4"><i>…and 5 more</i></td></tr>' in content
+    content = render_report({"samples": [sample]})
+
+    assert all(f"rule {i}<" in content for i in range(45))
+    assert all(f"drop{i}.exe" in content.replace("<wbr>", "") for i in range(30))
+    assert "more</i>" not in content
 
 
 def test_children_with_children_are_collapsed_toggles():

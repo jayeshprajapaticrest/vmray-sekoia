@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 2026-10-15 - 4.1.4
+
+### Added
+
+- Tests running the "Report on demand" playbook template end to end: the template JSON is walked as Sekoia's playbook engine does (Jinja arguments, conditions, Foreach), the VMRay actions run through `Action.execute()` against a fake VMRay, and the other modules' nodes are emulated. Covers the hash, URL and "nothing to enrich" paths, detonation failures, VMRay errors and per-node input changes.
+
+### Changed
+
+- `RenderReport` — tables show every row: the 20-row cap per table (and per IOC type) and its "…and N more" row are removed.
+- Playbook templates — when some hashes are found and others are not, the hash report comment ends with a "Not in this report" section listing the hashes VMRay has never analysed and the lookups that failed. Written as HTML without quotes or line breaks, so the node's text is the same in the JSON file and in the playbook editor.
+
 ## 2026-10-13 - 4.1.3
 
 ### Added

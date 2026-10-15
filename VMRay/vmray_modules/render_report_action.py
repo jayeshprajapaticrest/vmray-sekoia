@@ -39,8 +39,6 @@ from typing import Any
 from vmray_modules.base import VMRayAction
 from vmray_modules.report_models import RenderReportArguments, RenderReportResults
 
-_MAX_ROWS = 20  # per table (and per IOC type) — keeps a comment readable; the report link has the rest
-
 # long.html's colours
 _VERDICT_COLORS = {
     "malicious": "#B22F45",
@@ -198,20 +196,14 @@ def _table(
     headers: list[str],
     rows: list[list[str]],
     nowrap: frozenset[int] = frozenset(),
-    limit: int | None = _MAX_ROWS,
-    omitted: int = 0,
 ) -> list[str]:
     """An HTML table, on one line so markdown leaves it alone. HTML rather than a markdown table because only
     HTML cells take the attributes Sekoia keeps once it strips `style`: `nowrap` on the short columns
     (`nowrap` = their indexes — labels, types, verdicts, dates) so they never wrap whatever the zoom, and
     `valign="top"` / `align="left"` on every cell so headings and values line up the same in every table.
-    Cell contents are HTML: escape them with _h or _code_html."""
-    shown = rows if limit is None else rows[:limit]
-    omitted += len(rows) - len(shown)
+    Cell contents are HTML: escape them with _h or _code_html. Every row is shown."""
     html = ['<table width="100%">', _row([_h(h) for h in headers], nowrap, "th")]
-    html += [_row(row, nowrap) for row in shown]
-    if omitted:
-        html.append(f'<tr><td colspan="{len(headers)}"><i>…and {omitted} more</i></td></tr>')
+    html += [_row(row, nowrap) for row in rows]
     html.append("</table>")
     return ["".join(html)]
 
@@ -337,10 +329,8 @@ def _mitre(techniques: Any) -> list[str]:
 
 def _iocs(iocs: dict[str, Any]) -> list[str]:
     rows: list[list[str]] = []
-    omitted = 0
     for key, value_key, _label in _IOC_TYPES:
-        items = _dicts(iocs.get(key))
-        for item in items[:_MAX_ROWS]:
+        for item in _dicts(iocs.get(key)):
             value = item.get(value_key)
             if isinstance(value, list):
                 value = ", ".join(_strs(value))
@@ -351,11 +341,9 @@ def _iocs(iocs: dict[str, Any]) -> list[str]:
                     _verdict(item.get("verdict")) if item.get("verdict") else "—",
                 ]
             )
-        omitted += max(0, len(items) - _MAX_ROWS)
     if not rows:
         return []
-    # capped per IOC type above, so every type shows up; not capped again overall
-    table = _table(["Type", "Value", "Verdict"], rows, frozenset({0, 2}), limit=None, omitted=omitted)
+    table = _table(["Type", "Value", "Verdict"], rows, frozenset({0, 2}))
     return _section("Indicators of Compromise", table)
 
 
