@@ -243,7 +243,7 @@ class ReportSample(BaseModel):
     sample_threat_indicators: dict[str, Any] = Field(default_factory=dict, description="GET /sample/{id}/vtis")
     sample_mitre_attack: dict[str, Any] = Field(default_factory=dict, description="GET /sample/{id}/mitre_attack")
     sample_iocs: dict[str, Any] = Field(default_factory=dict, description="GET /sample/{id}/iocs")
-    sample_child_samples: list[ReportSample] = Field(
+    sample_child_samples: list["ReportSample"] = Field(
         default_factory=list, description="Child samples, built the same way, down to max_recursion_depth."
     )
     has_screenshots: bool = Field(default=False, description="Any analysis in sample_analyses carries screenshots.")

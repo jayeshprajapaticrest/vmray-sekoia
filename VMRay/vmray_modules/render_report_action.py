@@ -126,7 +126,7 @@ def _dict(value: Any) -> dict[str, Any]:
 def _int(value: Any) -> int | None:
     try:
         return int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
