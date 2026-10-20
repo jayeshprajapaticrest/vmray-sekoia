@@ -1,24 +1,18 @@
 """
 Thin client for the VMRay Platform REST API.
 
-Deliberately hand-rolled rather than built on the official `vmray-rest-api`
-PyPI package: that package's `VMRayRESTAPIError` only preserves `status_code`,
-not response headers, so it cannot honour a `Retry-After` value — a real gap
-against this module's documented 429 contract (design doc, "HTTP client
-contract"). Retry-After handling instead lives at the transport layer via
-urllib3's `Retry(respect_retry_after_header=True)`, which needs no response
-object survives past the exception to work.
+Hand-rolled rather than built on the official `vmray-rest-api` package: that
+package's error keeps only the status code, not the response headers, so it
+cannot honour a 429's `Retry-After`. Here retries live at the transport layer
+(urllib3 `Retry`, `respect_retry_after_header=True`): up to 3 retries per
+request on 429/5xx, GET only.
 
-Loosely modelled on the Cortex-Analyzers VMRay analyzer's client (structure,
-exception hierarchy, retry-adapter pattern) — adapted, not copied: retry
-budget raised to 5 attempts (this module's documented contract), full
-endpoint coverage added (system_info), and errors are
-raised as typed exceptions for the caller to catch per-section rather than
-letting one failure abort a whole fan-out.
+Every failure is raised as a VMRayClientError subclass, so callers can catch
+it per call — e.g. one report section — instead of one failure aborting the
+whole report.
 
-Endpoint paths and response shapes are as confirmed against the VMRay
-Platform REST API OpenAPI spec, v2026.2.1 (spikes/specs/vmray-openapi-2026.2.1.json
-in the design repo) — see the design doc's "VMRay API surface" table.
+Endpoint paths and response shapes follow the VMRay Platform REST API OpenAPI
+spec, v2026.2.1.
 """
 
 import re
@@ -33,11 +27,11 @@ DEFAULT_USER_AGENT = "Sekoia-VMRay-Module"
 # Retried automatically at the transport layer. 429 honours Retry-After via
 # respect_retry_after_header; 5xx get capped exponential backoff instead.
 _RETRY_STATUS_CODES = (429, 500, 502, 503, 504)
-_RETRY_TOTAL = 5
+_RETRY_TOTAL = 3
 # Only these are retried on an error status: retrying POST /sample/submit after a 502 could submit (and bill)
 # the same URL twice if VMRay had accepted the first one. A POST is still retried on a failed connection.
 _RETRY_METHODS = frozenset(["GET", "HEAD"])
-_RETRY_AFTER_MAX = 120  # seconds — a Retry-After of hours would stall the playbook run
+_RETRY_AFTER_MAX = 90  # seconds — a Retry-After of hours would stall the playbook run
 _BACKOFF_MAX = 30
 # (connect, read) seconds: without a timeout a stalled connection hangs the action for good
 _TIMEOUT = (10, 120)
@@ -92,6 +86,16 @@ class _VMRaySession(sessions.Session):
             raise VMRayConnectionError(f"VMRay could not be reached: {type(exc).__name__}: {exc}") from exc
 
 
+_ERROR_TEXT_MAX = 300  # characters of a non-JSON error body kept in the message
+
+
+def _shorten(text: str) -> str:
+    """A raw error body for an error message: whitespace collapsed, at most _ERROR_TEXT_MAX characters — a proxy's
+    HTML error page would otherwise land whole in the playbook run's error."""
+    text = " ".join(text.split())
+    return text if len(text) <= _ERROR_TEXT_MAX else text[:_ERROR_TEXT_MAX] + "…"
+
+
 def _drop_none(data: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in data.items() if v is not None}
 
@@ -109,7 +113,6 @@ class VMRayClient:
     """
 
     # -- endpoint paths, one place, matching the OpenAPI spec verbatim -----
-    _system_info = "/rest/system_info"
     _submit = "/rest/sample/submit"
     _submission = "/rest/submission/{submission_id}"
     _sample = "/rest/sample/{sample_id}"
@@ -148,9 +151,9 @@ class VMRayClient:
 
     def _mount_retry_adapter(self) -> None:
         """Retries 429/5xx at the transport layer. `respect_retry_after_header`
-        makes urllib3 honour the server's `Retry-After` value directly —
-        the whole reason this module doesn't depend on the vendor SDK's
-        client, whose raised exception drops response headers entirely."""
+        makes urllib3 honour the server's `Retry-After` value directly — the
+        reason this client is hand-rolled rather than built on VMRay's
+        `vmray-rest-api` package, whose errors drop the response headers."""
         retry = Retry(
             total=_RETRY_TOTAL,
             connect=_RETRY_TOTAL,
@@ -172,9 +175,9 @@ class VMRayClient:
         return f"{self.base_url}{path}"
 
     def _raise_for_status(self, res: Response) -> None:
-        """Layer 1 of the module's 3-layer error contract: HTTP status."""
+        """Check 1 of 3 on every response: the HTTP status (2 and 3 are in _body)."""
         if not (200 <= res.status_code < 300):
-            message = res.text
+            message = _shorten(res.text)
             try:
                 body = res.json()
                 if isinstance(body, dict) and body.get("error_msg"):
@@ -184,8 +187,8 @@ class VMRayClient:
             raise BadResponseError(f"VMRay API request failed (HTTP {res.status_code}): {message}", res.status_code)
 
     def _check_response(self, res: Response) -> Any:
-        """Layers 2+3: HTTP status, then the body envelope (`result` field,
-        checked even on a 200), then continuation-id pagination, drained
+        """Checks 1-3 (HTTP status, a JSON object, its `result` field — checked
+        even on a 200), then follows continuation-id pagination, drained
         immediately since a continuation id is single-shot per the API docs."""
         body = self._body(res)
         data = body.get("data", [])
@@ -209,14 +212,9 @@ class VMRayClient:
         if not isinstance(body, dict):
             raise VMRayAPIError("VMRay answered with an unexpected JSON body")
         if body.get("result") != "ok":
-            # Layer 2 — a 2xx whose envelope still reports an error.
+            # check 3 — a 2xx whose envelope still reports an error
             raise VMRayAPIError(body.get("error_msg") or "VMRay API returned an unspecified error.")
         return body
-
-    # -- system -----------------------------------------------------------
-
-    def system_info(self) -> dict[str, Any]:
-        return self._check_response(self.session.get(self._url(self._system_info)))
 
     # -- submission -------------------------------------------------------
 
@@ -228,12 +226,12 @@ class VMRayClient:
         **extra_params: Any,
     ) -> dict[str, Any]:
         # analysis_caching is not sent: it takes 'disabled'/'enabled'/'smart'/'legacy', and left out the VMRay
-        # user's own setting applies — as with the Cortex analyzer, which never sends it either
+        # user's own setting applies
         tags = [t.strip() for t in tags or [] if t and t.strip()]
         params = _drop_none(
             {
                 "sample_url": sample_url,
-                "reanalyze": reanalyze,
+                "reanalyze": True if reanalyze else None,  # left out when false
                 "tags": ",".join(tags) if tags else None,
                 **extra_params,
             }

@@ -1,3 +1,6 @@
+import json
+from pathlib import Path
+
 import pytest
 
 from vmray_modules.models import BuildReportArguments, GetSamplesByHashArguments, SubmitUrlSampleArguments
@@ -37,3 +40,10 @@ def test_render_report_inputs_have_readable_titles_and_a_512_kb_default():
 
 def test_get_samples_by_hash_input_title():
     assert GetSamplesByHashArguments.model_json_schema()["properties"]["hashes"]["title"] == "File hashes"
+
+
+def test_every_action_manifest_has_its_slug():
+    """`generate-files-from-code` rewrites the action manifests without a `slug`: put it back after regenerating."""
+    for path in sorted(Path(__file__).parents[1].glob("action_*.json")):
+        manifest = json.loads(path.read_text())
+        assert manifest.get("slug") == manifest["name"].lower().replace(" ", "_"), path.name

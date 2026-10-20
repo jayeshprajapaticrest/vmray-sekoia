@@ -1,0 +1,674 @@
+{
+  "name": "VMRay: Report on demand (Hash + URL)",
+  "uuid": "84abc5e0-5b1c-4bc8-82bf-bab447bd7f24",
+  "tags": [
+    "Alerts",
+    "Enrichment",
+    "VMRay"
+  ],
+  "workspace": "Operation Center",
+  "description": "Run by an analyst on an alert. Extracts the file hashes (file.hash.* / process.hash.*) and the http(s) url.original of the alert's first event. Hashes are looked up in VMRay's existing analyses (no quota); a URL is detonated in VMRay (consumes quota, waits up to 30 min). For each, the full VMRay report is posted as an alert comment with its screenshots, and the IOCs are pushed to an IOC collection. Before use: select your VMRay module configuration on the VMRay nodes, and set ioc_collection_id on both 'Add IOCs to IOC Collection' nodes.",
+  "nodes": {
+    "0": {
+      "name": "Manual Trigger",
+      "type": "trigger",
+      "outputs": {
+        "default": [
+          "2"
+        ]
+      },
+      "position": {
+        "x": 2100,
+        "y": 1500
+      },
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a",
+      "trigger_uuid": "fc26eb9f-b272-4c15-b3bf-ace397c0dc57"
+    },
+    "2": {
+      "name": "Get Alert",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "3"
+        ]
+      },
+      "position": {
+        "x": 2100,
+        "y": 1736
+      },
+      "arguments": {
+        "stix": false,
+        "uuid": "{{ node.0['alert_uuid'] }}"
+      },
+      "action_uuid": "8d189665-5401-4098-8d60-944de9a6199a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "3": {
+      "name": "Get Events",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "4"
+        ]
+      },
+      "position": {
+        "x": 2100,
+        "y": 1972
+      },
+      "arguments": {
+        "limit": 100,
+        "query": "alert_short_ids: \"{{ node.2['short_id'] }}\"",
+        "latest_time": "{{ node.2['last_seen_at'] }}",
+        "earliest_time": "{{ node.2['first_seen_at'] }}"
+      },
+      "action_uuid": "af0b4355-a428-43d6-991c-d5ff878e17d5",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "4": {
+      "name": "Extract File Hashes",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "6"
+        ]
+      },
+      "position": {
+        "x": 2100,
+        "y": 2208
+      },
+      "arguments": {
+        "file": "{{ node.3['events'][:1] }}",
+        "to_file": false,
+        "jsonpath": "$..['file.hash.sha256','file.hash.sha1','file.hash.md5','process.hash.sha256','process.hash.sha1','process.hash.md5']",
+        "return_list": true
+      },
+      "action_uuid": "ecedfa52-7033-4ea8-9c3b-93ad34295f87",
+      "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
+    },
+    "6": {
+      "name": "Extract URL",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "7",
+          "8",
+          "16"
+        ]
+      },
+      "position": {
+        "x": 2100,
+        "y": 2680
+      },
+      "arguments": {
+        "file": "{{ node.3['events'][:1] }}",
+        "to_file": false,
+        "jsonpath": "$[?(@['url.original'] =~ '(?i)^https?://')]['url.original']",
+        "return_list": true
+      },
+      "action_uuid": "ecedfa52-7033-4ea8-9c3b-93ad34295f87",
+      "module_uuid": "07cce76b-a319-40ee-a0cf-1ba433431e21"
+    },
+    "7": {
+      "name": "Nothing to Enrich?",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ (node.4['output'] + node.6['output']) | length }}",
+          "name": "Nothing",
+          "right": "{{ 0 }}",
+          "comparison": "==",
+          "description": "No hash and no http(s) URL at all \u2014 the hash and URL branches both stop silently, so say so once"
+        }
+      ],
+      "outputs": {
+        "else": [],
+        "Nothing": [
+          "25"
+        ]
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 1500,
+        "y": 2916
+      }
+    },
+    "8": {
+      "name": "Hash Found?",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ node.4['output'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "The first event carries a file/process hash"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "9"
+        ],
+        "else": []
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 2100,
+        "y": 2916
+      }
+    },
+    "9": {
+      "name": "VMRay: Get Samples By Hash",
+      "type": "action",
+      "outputs": {
+        "found": [
+          "10"
+        ],
+        "not_found": [
+          "24"
+        ]
+      },
+      "position": {
+        "x": 2100,
+        "y": 3152
+      },
+      "arguments": {
+        "hashes": "{{ node.4['output'] }}"
+      },
+      "action_uuid": "ef382164-6133-5fa2-b380-622c026789d1",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "10": {
+      "name": "VMRay: Build Report (Hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "11"
+        ]
+      },
+      "position": {
+        "x": 1800,
+        "y": 3388
+      },
+      "arguments": {
+        "sample_ids": "{{ node.9['sample_ids'] }}",
+        "include_screenshots": true,
+        "max_recursion_depth": 5
+      },
+      "action_uuid": "8fef9429-5a84-5f96-b5c6-c152e2d8ad30",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "11": {
+      "name": "VMRay: Render Report (Hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "12"
+        ]
+      },
+      "position": {
+        "x": 1800,
+        "y": 3624
+      },
+      "arguments": {
+        "report_path": "{{ node.10['report_path'] }}",
+        "max_comment_kb": 512
+      },
+      "action_uuid": "f6426a65-3f5b-5157-842e-d2ec2db51000",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "12": {
+      "name": "Comment Alert (Hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "13",
+          "33"
+        ]
+      },
+      "position": {
+        "x": 1800,
+        "y": 3860
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "{{ node.11['content'] }}{% if node.9['not_found'] or node.9['errors'] %}<p><b>Not in this report</b></p>{% if node.9['not_found'] %}<p>VMRay has never analysed these file hash(es) from the alert:</p><ul>{% for h in node.9['not_found'] %}<li><code>{{ h | e }}</code></li>{% endfor %}</ul>{% endif %}{% if node.9['errors'] %}<p>Lookup failed for:</p><ul>{% for h in node.9['errors'] %}<li><code>{{ h | e }}</code> \u2014 <code>{{ node.9['errors'][h] | e }}</code></li>{% endfor %}</ul>{% endif %}{% endif %}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "13": {
+      "name": "VMRay: Extract IOCs (Hash)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "31"
+        ]
+      },
+      "position": {
+        "x": 1800,
+        "y": 4096
+      },
+      "arguments": {
+        "report_path": "{{ node.10['report_path'] }}"
+      },
+      "action_uuid": "b260276d-2d98-5e4a-8be8-a960dc3a5e0c",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "14": {
+      "name": "Foreach Indicator Type (Hash)",
+      "type": "operator",
+      "subtype": "foreach",
+      "items": "{{ node.13['indicator_groups'] }}",
+      "loop": [
+        "15"
+      ],
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 1800,
+        "y": 4568
+      }
+    },
+    "15": {
+      "name": "Add IOCs to IOC Collection (Hash)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 2100,
+        "y": 4568
+      },
+      "arguments": {
+        "valid_for": 30,
+        "indicators": "{{ node.14.default.value['indicators'] }}",
+        "indicator_type": "{{ node.14.default.value['type'] }}",
+        "ioc_collection_id": "ioc-collection--xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      },
+      "action_uuid": "0acabc04-43b4-4564-b9b2-08b80e0e1ecf",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "16": {
+      "name": "URL Found?",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ node.6['output'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "The first event carries an http(s) url.original"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "17"
+        ],
+        "else": []
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 3300,
+        "y": 2916
+      }
+    },
+    "17": {
+      "name": "VMRay: Submit URL Sample",
+      "type": "action",
+      "outputs": {
+        "completed": [
+          "18"
+        ],
+        "timed_out": [
+          "26"
+        ],
+        "submission_failed": [
+          "26"
+        ]
+      },
+      "position": {
+        "x": 3300,
+        "y": 3152
+      },
+      "arguments": {
+        "reanalyze": true,
+        "sample_url": "{{ node.6['output'][0] }}"
+      },
+      "action_uuid": "10c9d58f-4e09-53c6-ba6a-91a765dc5634",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "18": {
+      "name": "VMRay: Build Report (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "19"
+        ]
+      },
+      "position": {
+        "x": 3000,
+        "y": 3388
+      },
+      "arguments": {
+        "submission_ids": "{{ node.17['submission_ids'] }}",
+        "include_screenshots": true,
+        "max_recursion_depth": 5
+      },
+      "action_uuid": "8fef9429-5a84-5f96-b5c6-c152e2d8ad30",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "19": {
+      "name": "VMRay: Render Report (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "20"
+        ]
+      },
+      "position": {
+        "x": 3000,
+        "y": 3624
+      },
+      "arguments": {
+        "report_path": "{{ node.18['report_path'] }}",
+        "max_comment_kb": 512
+      },
+      "action_uuid": "f6426a65-3f5b-5157-842e-d2ec2db51000",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "20": {
+      "name": "Comment Alert (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "21",
+          "34"
+        ]
+      },
+      "position": {
+        "x": 3000,
+        "y": 3860
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "{{ node.19['content'] }}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "21": {
+      "name": "VMRay: Extract IOCs (URL)",
+      "type": "action",
+      "outputs": {
+        "default": [
+          "32"
+        ]
+      },
+      "position": {
+        "x": 3000,
+        "y": 4096
+      },
+      "arguments": {
+        "report_path": "{{ node.18['report_path'] }}"
+      },
+      "action_uuid": "b260276d-2d98-5e4a-8be8-a960dc3a5e0c",
+      "module_uuid": "a250eb2a-058b-4b4c-8b16-220d31ed5e6e"
+    },
+    "22": {
+      "name": "Foreach Indicator Type (URL)",
+      "type": "operator",
+      "subtype": "foreach",
+      "items": "{{ node.21['indicator_groups'] }}",
+      "loop": [
+        "23"
+      ],
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 3000,
+        "y": 4568
+      }
+    },
+    "23": {
+      "name": "Add IOCs to IOC Collection (URL)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 3300,
+        "y": 4568
+      },
+      "arguments": {
+        "valid_for": 30,
+        "indicators": "{{ node.22.default.value['indicators'] }}",
+        "indicator_type": "{{ node.22.default.value['type'] }}",
+        "ioc_collection_id": "ioc-collection--xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+      },
+      "action_uuid": "0acabc04-43b4-4564-b9b2-08b80e0e1ecf",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "24": {
+      "name": "Comment Alert (Hashes Unknown)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 2400,
+        "y": 3388
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "**VMRay: no known sample** - no quota spent.\n\n{% if node.9['not_found'] %}VMRay has never analysed these file hash(es) from the alert:\n{% for h in node.9['not_found'] %}\n- `{{ h | replace('`', \"'\") }}`{% endfor %}{% endif %}{% if node.9['errors'] %}\n\nLookup failed for:\n{% for h in node.9['errors'] %}\n- `{{ h | replace('`', \"'\") }}` \u2014 `{{ node.9['errors'][h] | replace('`', \"'\") }}`{% endfor %}{% endif %}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "25": {
+      "name": "Comment Alert (Nothing to Enrich)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 1500,
+        "y": 3152
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "No VMRay enrichment: this alert's first event carries no file hash and no http(s) URL. Fields checked: file.hash.sha256/sha1/md5, process.hash.sha256/sha1/md5 and url.original."
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "26": {
+      "name": "Comment Alert (Detonation Incomplete)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 3600,
+        "y": 3388
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "**VMRay: detonation incomplete** \u2014 `{{ node.6['output'][0] | replace('`', \"'\") }}` did not return a report.{% if node.17['timed_out'] %}\n\nTimed out waiting: submission(s) {{ node.17['pending_submission_ids'] | join(', ') }} may still finish on VMRay.{% endif %}{% if node.17['failed_submission_ids'] %}\n\nFailed submission(s): {{ node.17['failed_submission_ids'] | join(', ') }}.{% endif %}{% if node.17['errors'] %}\n\nErrors:\n{% for e in node.17['errors'] %}\n- {% if e.get('submission_id') %}submission {{ e.get('submission_id') }}: {% endif %}`{{ (e.get('error_msg') or 'unknown error') | replace('`', \"'\") | replace('\\n', ' ') }}`{% endfor %}{% endif %}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "27": {
+      "name": "Foreach Screenshot Comment (Hash)",
+      "type": "operator",
+      "subtype": "foreach",
+      "items": "{{ node.11['screenshot_comments'] }}",
+      "loop": [
+        "28"
+      ],
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 2100,
+        "y": 4246
+      }
+    },
+    "28": {
+      "name": "Comment Alert (Screenshots, Hash)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 2400,
+        "y": 4246
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "{{ node.27.default.value }}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "29": {
+      "name": "Foreach Screenshot Comment (URL)",
+      "type": "operator",
+      "subtype": "foreach",
+      "items": "{{ node.19['screenshot_comments'] }}",
+      "loop": [
+        "30"
+      ],
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 3300,
+        "y": 4246
+      }
+    },
+    "30": {
+      "name": "Comment Alert (Screenshots, URL)",
+      "type": "action",
+      "outputs": {
+        "default": []
+      },
+      "position": {
+        "x": 3600,
+        "y": 4246
+      },
+      "arguments": {
+        "uuid": "{{ node.0['alert_uuid'] }}",
+        "author": "VMRay",
+        "content": "{{ node.29.default.value }}"
+      },
+      "action_uuid": "0d323de3-a864-4afe-a0c3-e7ff45883d7a",
+      "module_uuid": "92d8bb47-7c51-445d-81de-ae04edbb6f0a"
+    },
+    "31": {
+      "name": "Indicators to Push? (Hash)",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ node.13['indicator_groups'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "Extract IOCs found no indicator to push \u2014 a Foreach rejects an empty list (\"Foreach input is not a list\")"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "14"
+        ],
+        "else": []
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 1800,
+        "y": 4332
+      }
+    },
+    "32": {
+      "name": "Indicators to Push? (URL)",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ node.21['indicator_groups'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "Extract IOCs found no indicator to push \u2014 a Foreach rejects an empty list (\"Foreach input is not a list\")"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "22"
+        ],
+        "else": []
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 3000,
+        "y": 4332
+      }
+    },
+    "33": {
+      "name": "Screenshots? (Hash)",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ node.11['screenshot_comments'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "The report has no screenshot \u2014 a Foreach rejects an empty list (\"Foreach input is not a list\")"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "27"
+        ],
+        "else": []
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 2100,
+        "y": 4010
+      }
+    },
+    "34": {
+      "name": "Screenshots? (URL)",
+      "type": "operator",
+      "cases": [
+        {
+          "left": "{{ node.19['screenshot_comments'] | length }}",
+          "name": "Yes",
+          "right": "{{ 0 }}",
+          "comparison": ">",
+          "description": "The report has no screenshot \u2014 a Foreach rejects an empty list (\"Foreach input is not a list\")"
+        }
+      ],
+      "outputs": {
+        "Yes": [
+          "29"
+        ],
+        "else": []
+      },
+      "subtype": "condition",
+      "position": {
+        "x": 3300,
+        "y": 4010
+      }
+    }
+  }
+}

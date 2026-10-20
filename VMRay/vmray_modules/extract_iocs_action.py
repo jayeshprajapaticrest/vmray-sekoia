@@ -1,13 +1,11 @@
-"""ExtractIocs — pure transform: a BuildReport result -> Sekoia's flat, typed
-indicator list for add_ioc_to_ioc_collection, plus the same list grouped by type
-(`indicator_groups`): that action takes one indicator_type per call, so a
-playbook pushes every type with one Foreach over the groups.
+"""ExtractIocs — pure transform: a BuildReport result -> Sekoia's flat, typed indicator list for
+add_ioc_to_ioc_collection, plus the same list grouped by type (`indicator_groups`): that action takes one
+indicator_type per call, so a playbook pushes every type with one Foreach over the groups.
 
-Walks every sample and (by default) its child samples, like the Cortex-Analyzers
-VMRay analyzer's artifacts. Each IOC is judged on its own severity: only IOCs in
-`ioc_severity_filter` (default: malicious) are extracted. Child samples also add
-their own SHA256 — a dropped or downloaded payload — when their verdict passes
-the same filter. No VMRay or Sekoia call.
+Walks every sample and (by default) its child samples. Each IOC is judged on its own severity: with
+`ioc_severity_filter` set, only IOCs of those severities are extracted; empty (the default) extracts every IOC.
+Child samples also add their own SHA256 — a dropped or downloaded payload — when their verdict passes the same
+filter. No VMRay or Sekoia call.
 """
 
 import ipaddress
@@ -31,7 +29,7 @@ _CATEGORY_MAP: dict[str, tuple[str, tuple[str, ...]]] = {
 
 # `files` gets its own handling: a file IOC carries `hashes`, a list of
 # {md5_hash, sha1_hash, sha256_hash, ...} — one entry per file content seen.
-# Each entry contributes its strongest hash, as the Cortex analyzer does.
+# Each entry contributes its strongest hash.
 _HASH_PRIORITY = ("sha256_hash", "sha1_hash", "md5_hash")
 
 
@@ -105,7 +103,7 @@ def iocs_to_indicators(iocs: IOCSet) -> list[Indicator]:
     return indicators
 
 
-_MAX_DEPTH = 10  # Build report's own limit on child-sample levels
+_MAX_DEPTH = 10  # Build Report's own limit on child-sample levels
 
 
 def _dicts(value: Any) -> list[dict[str, Any]]:
@@ -123,7 +121,7 @@ _IOC_SEVERITIES = ("malicious", "suspicious")
 
 
 def _severities(values: list[str]) -> set[str]:
-    """The analyzer's rule: values other than malicious/suspicious are ignored; none left = no filter."""
+    """Values other than malicious/suspicious are ignored; none left = no filter."""
     return {v.strip().lower() for v in values if v and v.strip().lower() in _IOC_SEVERITIES}
 
 
@@ -179,8 +177,8 @@ def group_indicators(indicators: list[Indicator]) -> list[IndicatorGroup]:
 class ExtractIocs(VMRayAction):
     name = "Extract IOCs"
     description = (
-        "Extract the IOCs of a Build report as the typed indicators Add IOC to IOC Collection expects, also grouped "
-        "by type — malicious IOCs only by default, child samples included."
+        "Extract the IOCs of a Build Report as the typed indicators Add IOC to IOC Collection expects, also grouped "
+        "by type — every IOC by default (or only the severities chosen), child samples included."
     )
     results_model = ExtractIocsResults
 

@@ -8,7 +8,7 @@
       "VMRay"
     ],
     "workspace": "Operation Center",
-    "description": "Look up the alert's file hashes and detonate its URL in VMRay, post the full report with screenshots as alert comments, and push the malicious IOCs to an IOC collection"
+    "description": "Look up the alert's file hashes and detonate its URL in VMRay, post the full report with screenshots as alert comments, and push the IOCs to an IOC collection"
   },
   {
     "file": "vmray_report_on_alert_creation.json",
@@ -19,6 +19,6 @@
       "VMRay"
     ],
     "workspace": "Operation Center",
-    "description": "On every new alert, look up its file hashes and detonate its URL in VMRay, post the full report with screenshots as alert comments, and push the malicious IOCs to an IOC collection"
+    "description": "On every new alert, look up its file hashes and detonate its URL in VMRay, post the full report with screenshots as alert comments, and push the IOCs to an IOC collection"
   }
 ]

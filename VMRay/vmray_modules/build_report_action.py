@@ -1,27 +1,22 @@
-"""BuildReport — the Cortex-Analyzers VMRay analyzer's `_build_report`.
+"""BuildReport — the full VMRay report for a set of samples.
 
-Takes sample IDs (e.g. from GetSamplesByHash) or submission IDs (e.g. from
-SubmitUrlSample, each resolved to its sample), fetches every sample — lookup and
-submit responses are incomplete, so the analyzer refetches them too — and
-attaches, per sample, the same sub-resources as the analyzer's
-`_build_sample_node`: analyses of the latest submission, VTIs, MITRE ATT&CK,
-IOCs, classifications, threat names and screenshots, then recurses into child
-samples down to `max_recursion_depth`.
+Takes sample IDs (e.g. from GetSamplesByHash) or submission IDs (e.g. from SubmitUrlSample, each resolved to its
+sample), fetches every sample — lookup and submit responses are incomplete — and attaches, per sample, its
+sub-resources: analyses of the latest submission, VTIs, MITRE ATT&CK, IOCs, classifications, threat names and
+screenshots, then recurses into child samples down to `max_recursion_depth`. Child samples only get their IOCs —
+the rest of their sections is used nowhere. Every call is made one after another.
 
-Screenshots follow the analyzer's `_fetch_screenshots`: per analysis (newest
-first) read `logs/summary.json` from the analysis archive, fetch each listed
-screenshot, compress it to JPEG and embed it as base64. Sekoia has no
-attachment API, so embedding is the only way a screenshot reaches the alert
-comment. Unlike the analyzer there is no report-wide size budget: RenderReport
-splits the screenshots across as many comments as they need.
+Screenshots: per analysis (newest first), read `logs/summary.json` from the analysis archive, fetch each listed
+screenshot, compress it to JPEG and embed it as base64. Sekoia has no attachment API, so embedding is the only way a
+screenshot reaches the alert comment. There is no report-wide size budget: RenderReport splits the screenshots
+across as many comments as they need. A screenshot that cannot be fetched or read is named in the sample's `errors`.
 
-The report is written to a JSON file on data_path and only its path is returned
-(`report_path`): with screenshots it easily exceeds Sekoia's size limit on action
-arguments (SYM216), so the next nodes must receive it as a file, not inline.
+The report is written to a JSON file on data_path and only its path is returned (`report_path`): with screenshots
+it easily exceeds Sekoia's size limit on action arguments (SYM216), so the next nodes must receive it as a file,
+not inline.
 
-Deliberately left out versus the analyzer: sample-file downloads. Unlike the
-analyzer, one failing call does not abort the report: it lands in that sample's
-`errors` and every other section is still filled.
+Deliberately left out: sample-file downloads. One failing call does not abort the report: it lands in that
+sample's `errors` and every other section is still filled.
 """
 
 import base64
@@ -29,7 +24,6 @@ import io
 import json
 import uuid
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 import orjson
@@ -39,29 +33,24 @@ from requests import RequestException
 from sekoia_automation.exceptions import MissingActionArgumentError
 
 from vmray_modules.base import VMRayAction
-from vmray_modules.client import VMRayClient, VMRayClientError
+from vmray_modules.client import BadResponseError, VMRayClient, VMRayClientError
 from vmray_modules.models import BuildReportArguments, BuildReportResults, Report, ReportSample
 
-_MAX_WORKERS = 4
-
-# Narrower than the analyzer's 1280px, so more fit in a comment; quality 85 (the
-# analyzer uses 82) keeps text in the screenshot from blurring into JPEG artifacts.
+# 800px wide so more fit in a comment; quality 85 keeps text in the screenshot from
+# blurring into JPEG artifacts.
 _SCREENSHOT_MAX_WIDTH = 800
 _SCREENSHOT_QUALITY = 85
 
 
-def run_concurrently(tasks: dict[str, Callable[[], Any]]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Run each task in parallel; failures land in the errors map instead of aborting the rest."""
+def run_each(tasks: dict[str, Callable[[], Any]]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Run each task in turn; a failure lands in the errors map instead of aborting the rest."""
     results: dict[str, Any] = {}
     errors: dict[str, str] = {}
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS) as pool:
-        future_to_name = {pool.submit(fn): name for name, fn in tasks.items()}
-        for future in as_completed(future_to_name):
-            name = future_to_name[future]
-            try:
-                results[name] = future.result()
-            except Exception as exc:
-                errors[name] = _describe(exc)
+    for name, task in tasks.items():
+        try:
+            results[name] = task()
+        except Exception as exc:
+            errors[name] = _describe(exc)
     return results, errors
 
 
@@ -99,8 +88,13 @@ def _should_fetch_screenshots(include: bool, level: int) -> bool:
     return include and level == 0
 
 
-def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> None:
-    """Embed each analysis's screenshots into `analysis_screenshots` ([{name, data}]), newest analysis first."""
+def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> dict[str, str]:
+    """Embed each analysis's screenshots into `analysis_screenshots` ([{name, data}]), newest analysis first.
+
+    Returns what could not be embedded, for the sample's `errors`: a screenshot list that could not be read, and
+    each listed screenshot that could not be fetched or read. An analysis without a screenshot list (HTTP 404, e.g.
+    a static analysis) simply has no screenshots and is not an error."""
+    errors: dict[str, str] = {}
     analyses = sample.get("sample_analyses") or []
     analyses.sort(key=lambda analysis: analysis.get("analysis_created") or "", reverse=True)
 
@@ -109,21 +103,37 @@ def fetch_screenshots(client: VMRayClient, sample: dict[str, Any]) -> None:
         analysis_id = analysis.get("analysis_id")
         try:
             summary = json.loads(client.get_analysis_archive_file(analysis_id, "logs/summary.json"))
-        except _RECOVERABLE:
-            continue  # e.g. a static analysis has no screenshots — optional, never fails the report
+        except BadResponseError as exc:
+            if exc.status_code != 404:
+                errors[f"screenshots:{analysis_id}"] = f"screenshot list could not be read: {_describe(exc)}"
+            continue
+        except _RECOVERABLE as exc:
+            errors[f"screenshots:{analysis_id}"] = f"screenshot list could not be read: {_describe(exc)}"
+            continue
         entries = summary.get("screenshots") if isinstance(summary, dict) else None
-        for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entries, list):
+            if entries is not None or not isinstance(summary, dict):
+                errors[f"screenshots:{analysis_id}"] = "screenshot list could not be read: unexpected format"
+            continue
+        unnamed = 0
+        for entry in entries:
             archive_path = entry.get("screenshot_archive_path") if isinstance(entry, dict) else None
             if not isinstance(archive_path, str) or not archive_path:
+                unnamed += 1
                 continue
+            name = archive_path.removeprefix("screenshots/")
             try:
                 img_bytes = _compress_screenshot(client.get_analysis_archive_file(analysis_id, archive_path))
-            except (*_RECOVERABLE, UnidentifiedImageError, OSError, Image.DecompressionBombError):
-                continue  # one unreadable screenshot must not cost the rest
+            except (*_RECOVERABLE, UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+                errors[f"screenshot:{analysis_id}/{name}"] = _describe(exc)  # the rest are still embedded
+                continue
             b64 = base64.b64encode(img_bytes).decode("ascii")
-            analysis["analysis_screenshots"].append({"name": archive_path.removeprefix("screenshots/"), "data": b64})
+            analysis["analysis_screenshots"].append({"name": name, "data": b64})
+        if unnamed:
+            errors[f"screenshots:{analysis_id}"] = f"{unnamed} listed screenshot(s) without a path"
 
     sample["has_screenshots"] = any(a.get("analysis_screenshots") for a in analyses)
+    return errors
 
 
 _IOC_SEVERITIES = ("malicious", "suspicious")
@@ -131,14 +141,23 @@ _ANALYSIS_VERDICTS = ("malicious", "suspicious", "clean")
 
 
 def ioc_severity(values: list[str]) -> str | None:
-    """The analyzer's rule: exactly one valid severity filters server-side; none or both fetch everything."""
+    """Exactly one valid severity filters server-side; none or both fetch everything."""
     wanted = {v.strip().lower() for v in values if v and v.strip().lower() in _IOC_SEVERITIES}
     return wanted.pop() if len(wanted) == 1 else None
 
 
 def analysis_verdicts(values: list[str]) -> list[str]:
-    """The analyzer's rule: values other than malicious/suspicious/clean are ignored."""
+    """Values other than malicious/suspicious/clean are ignored."""
     return sorted({v.strip().lower() for v in values if v and v.strip().lower() in _ANALYSIS_VERDICTS})
+
+
+def check_filter(name: str, values: list[str], allowed: tuple[str, ...]) -> None:
+    """A filter whose values are all invalid (e.g. the typo "malicous") is an error, as in Extract IOCs: ignoring
+    it would silently report everything. A valid value next to an invalid one still filters, and the invalid one
+    is ignored."""
+    given = [v for v in values if v and v.strip()]
+    if given and not any(v.strip().lower() in allowed for v in given):
+        raise ValueError(f"{name} has no valid value: {values!r} — use {' and/or '.join(map(repr, allowed))}")
 
 
 # what each section must be; anything else VMRay sends lands in the sample's errors instead
@@ -160,20 +179,27 @@ def build_sample_node(
     ancestors: frozenset[int] = frozenset(),
 ) -> None:
     """`ancestors` are the sample ids on the path from the top-level sample: a child that is one of them (VMRay
-    data can point back up the tree) is recorded as an error and not built again, so the recursion ends."""
+    data can point back up the tree) is recorded as an error and not built again, so the recursion ends.
+
+    A top-level sample (level 0) gets every section. A child sample only gets its IOCs: the comment shows a child
+    as one row of the child tree (from its sample object alone), and Extract IOCs reads its IOCs — its analyses,
+    VTIs, MITRE ATT&CK, classifications and threat names are used nowhere, so they are not fetched (the top-level
+    sample's classifications and threat names already include its children's)."""
     sample_id = sample["sample_id"]
     verdicts = analysis_verdicts(arguments.analysis_verdict_filter)
     severity = ioc_severity(arguments.ioc_severity_filter)
-    tasks: dict[str, Callable[[], Any]] = {
-        "sample_analyses": lambda: client.get_sample_analyses(sample_id, verdicts=verdicts),
-        "sample_threat_indicators": lambda: client.get_sample_threat_indicators(sample_id),
-        "sample_mitre_attack": lambda: client.get_sample_mitre_attack(sample_id),
-        "sample_iocs": lambda: client.get_sample_iocs(sample_id, severity=severity),
-        "sample_classifications": lambda: client.get_sample_classifications(sample_id),
-        "sample_threat_names": lambda: client.get_sample_threat_names(sample_id),
-    }
+    tasks: dict[str, Callable[[], Any]] = {"sample_iocs": lambda: client.get_sample_iocs(sample_id, severity=severity)}
+    if level == 0:
+        tasks = {
+            "sample_analyses": lambda: client.get_sample_analyses(sample_id, verdicts=verdicts),
+            "sample_threat_indicators": lambda: client.get_sample_threat_indicators(sample_id),
+            "sample_mitre_attack": lambda: client.get_sample_mitre_attack(sample_id),
+            **tasks,
+            "sample_classifications": lambda: client.get_sample_classifications(sample_id),
+            "sample_threat_names": lambda: client.get_sample_threat_names(sample_id),
+        }
     # a failed classifications/threat_names call leaves the sample object's own values in place
-    results, errors = run_concurrently(tasks)
+    results, errors = run_each(tasks)
     for name, value in results.items():
         if isinstance(value, _SECTION_TYPES[name]):
             sample[name] = value
@@ -181,7 +207,7 @@ def build_sample_node(
             errors[name] = f"unexpected response from VMRay: {type(value).__name__}"
 
     if _should_fetch_screenshots(arguments.include_screenshots, level):
-        fetch_screenshots(client, sample)
+        errors.update(fetch_screenshots(client, sample))
 
     if arguments.max_recursion_depth > level:
         children = []
@@ -206,10 +232,10 @@ def build_sample_node(
 
 
 class BuildReport(VMRayAction):
-    name = "Build report"
+    name = "Build Report"
     description = (
         "Build the full VMRay report for sample IDs or submission IDs: analyses, VTIs, MITRE ATT&CK, IOCs, "
-        "classifications, threat names and screenshots per sample, including child samples."
+        "classifications, threat names and screenshots per sample, plus its child samples with their IOCs."
     )
     results_model = BuildReportResults
 
@@ -229,6 +255,8 @@ class BuildReport(VMRayAction):
         return sample_ids
 
     def run(self, arguments: BuildReportArguments) -> BuildReportResults:
+        check_filter("ioc_severity_filter", arguments.ioc_severity_filter, _IOC_SEVERITIES)
+        check_filter("analysis_verdict_filter", arguments.analysis_verdict_filter, _ANALYSIS_VERDICTS)
         errors: dict[str, str] = {}
         sample_ids: list[int | None]
         if arguments.sample_ids:

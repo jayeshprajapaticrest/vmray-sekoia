@@ -244,8 +244,8 @@ def test_hash_branch_end_to_end(sekoia, requests_mock):
     assert ("hash", "f" * 64) in values  # dropped file
     assert ("IP address", "203.0.113.9") in values  # malicious IOC of the child
     assert ("hash", "d" * 64) in values  # the malicious child itself
-    assert ("domain", "cdn.example") not in values  # suspicious IOC: not by default
-    assert ("hash", "e" * 64) not in values  # the clean grandchild
+    assert ("domain", "cdn.example") in values  # suspicious IOC: every severity by default
+    assert ("hash", "e" * 64) in values  # the clean grandchild too: no filter by default
     assert ("hash", SHA256) not in values  # the alert's own observable
     assert [g["type"] for g in extracted["indicator_groups"]] == ["hash", "IP address", "domain"]
 

@@ -1,7 +1,8 @@
 {
-  "name": "Submit URL sample",
+  "name": "Submit URL Sample",
+  "slug": "submit_url_sample",
   "description": "Submit a URL to VMRay, wait until every resulting submission has finished, and return them.",
-  "uuid": "c53a0834-7ea3-58c9-ac39-5c504c78e1f2",
+  "uuid": "10c9d58f-4e09-53c6-ba6a-91a765dc5634",
   "docker_parameters": "SubmitUrlSample",
   "arguments": {
     "properties": {
@@ -88,7 +89,7 @@
       },
       "timeout": {
         "default": 1800,
-        "description": "Maximum time (seconds) to wait for every submission to finish. The analyzer waits forever; this stops and takes the timed_out branch.",
+        "description": "Maximum time (seconds) to wait for every submission to finish, then the action stops and takes the timed_out branch.",
         "minimum": 0,
         "title": "Timeout",
         "type": "number"

@@ -1,7 +1,6 @@
 """GetSamplesByHash — GET /sample/{sha256|sha1|md5}/{hash} for a list of hashes.
 
-Mirrors the Cortex-Analyzers VMRay client's `get_samples_by_hash`: every sample
-matching a hash comes back, not just the first. Runs over a list because an
+Every sample matching a hash comes back, not just the first. Runs over a list because an
 alert's events usually carry several hashes and each lookup is free.
 
 Lookup only — building the full report (VTIs, IOCs, MITRE ATT&CK) is a separate
@@ -19,7 +18,7 @@ from vmray_modules.models import GetSamplesByHashArguments, GetSamplesByHashResu
 
 
 class GetSamplesByHash(VMRayAction):
-    name = "Get samples by hash"
+    name = "Get Samples By Hash"
     description = (
         "Look up SHA256/SHA1/MD5 hashes in VMRay's existing analyses and return every matching sample — "
         "costs no quota."

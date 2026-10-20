@@ -1,12 +1,13 @@
 {
   "name": "Extract IOCs",
-  "description": "Extract the IOCs of a Build report as the typed indicators Add IOC to IOC Collection expects, also grouped by type \u2014 malicious IOCs only by default, child samples included.",
+  "slug": "extract_iocs",
+  "description": "Extract the IOCs of a Build Report as the typed indicators Add IOC to IOC Collection expects, also grouped by type \u2014 every IOC by default (or only the severities chosen), child samples included.",
   "uuid": "b260276d-2d98-5e4a-8be8-a960dc3a5e0c",
   "docker_parameters": "ExtractIocs",
   "arguments": {
     "properties": {
       "report_path": {
-        "description": "The report file written by Build report \u2014 its `report_path` result.",
+        "description": "The report file written by Build Report \u2014 its `report_path` result.",
         "title": "Report path",
         "type": "string"
       },
@@ -17,7 +18,7 @@
         "type": "object"
       },
       "ioc_severity_filter": {
-        "description": "Restrict which IOC severities are extracted. Allowed values: 'malicious', 'suspicious'. Leave empty to extract every IOC, whatever its severity. A child sample's own SHA256 is extracted when its verdict is one of these values.",
+        "description": "Restrict which IOC severities are extracted. Allowed values: 'malicious', 'suspicious'. Empty (the default) extracts every IOC, whatever its severity, and every child sample's own SHA256, whatever its verdict. With values set, a child sample's own SHA256 is extracted when its verdict is one of them.",
         "items": {
           "type": "string"
         },

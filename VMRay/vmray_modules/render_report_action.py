@@ -1,8 +1,8 @@
 """RenderReport — pure transform: a BuildReport result -> one alert comment.
 
-Mirrors the Cortex-Analyzers TheHive template (VMRay_4_1/long.html): same
-sections, order, columns and colours. Sekoia renders comments as GitHub-flavoured
-markdown with Angular's HTML sanitizer, so the template's visual elements map to:
+Laid out like VMRay's own report: same sections, order, columns and colours.
+Sekoia renders comments as GitHub-flavoured markdown with Angular's HTML
+sanitizer, so the report's visual elements map to:
 coloured labels and score badges -> `<font color>`; section headings and their
 Toggle buttons -> one `<details open>` per section whose summary is the bold
 heading, each written on one line of HTML so markdown adds no space around it;
@@ -11,7 +11,7 @@ definition list -> a Property | Value table, and detections -> a table of their
 own; every table is HTML, so short columns can be kept from wrapping (`nowrap`)
 and cells aligned (`valign`/`align`) — attributes Sekoia keeps; titles ->
 `<font size>` 5 (comment) and 4 (sample), so headings step down on one scale;
-screenshots -> long.html's list mode, one toggle per screenshot holding its
+screenshots -> a list, one toggle per screenshot holding its
 single inline `data:` image, shown on click at the comment's full width (no
 thumbnail copy; a table cell would shrink it).
 
@@ -25,8 +25,7 @@ Every value that can come from the analysed sample (filenames, URLs, IOC values,
 rule text) is escaped — as a code span, or HTML-escaped inside HTML — so a
 crafted value cannot inject markup, links or remote images into the comment.
 
-Field names follow the VMRay OpenAPI spec (v2026.2.1) and the template. No VMRay
-or Sekoia call.
+Field names follow the VMRay OpenAPI spec (v2026.2.1). No VMRay or Sekoia call.
 """
 
 import base64
@@ -39,7 +38,7 @@ from typing import Any
 from vmray_modules.base import VMRayAction
 from vmray_modules.report_models import RenderReportArguments, RenderReportResults
 
-# long.html's colours
+# verdict and score colours
 _VERDICT_COLORS = {
     "malicious": "#B22F45",
     "blacklisted": "#B22F45",
@@ -50,7 +49,7 @@ _VERDICT_COLORS = {
 _GREY = "#969696"
 _SCORE_COLORS = {5: "#B22F45", 4: "#E25959", 3: "#EDBB7E", 2: "#F9DA51"}
 
-# (key under sample_iocs.iocs, value key, label) — the template's IOC order and fields
+# (key under sample_iocs.iocs, value key, label) — the IOC types shown, in this order
 _IOC_TYPES = (
     ("domains", "domain", "Domains"),
     ("ips", "ip_address", "IPs"),
@@ -127,7 +126,7 @@ def _dict(value: Any) -> dict[str, Any]:
 def _int(value: Any) -> int | None:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -221,7 +220,7 @@ def _heading(text: str, size: int) -> str:
 
 
 def _section(title: str, body: list[str]) -> list[str]:
-    """A long.html section whose heading is its own toggle (open by default) — no separate Toggle button.
+    """A report section whose heading is its own toggle (open by default) — no separate Toggle button.
     Bold text, not an <h4>: a heading tag inside <summary> pushes the disclosure triangle onto its own
     line, and Sekoia strips the CSS that would fix it."""
     return [_toggle(body, label=f"<b>{_h(title)}</b>")]
@@ -247,11 +246,11 @@ def _mitre_link(technique_id: Any) -> str:
     return f'<a href="https://attack.mitre.org/techniques/{technique_id.replace(".", "/")}/">{technique_id}</a>'
 
 
-# -- sections (long.html 1-7) -------------------------------------------------------
+# -- sections -----------------------------------------------------------------------
 
 
 def _overview(sample: dict[str, Any]) -> list[str]:
-    """long.html's overview, as a Property | Value table styled like every other section."""
+    """The overview, as a Property | Value table styled like every other section."""
     rows = [["Verdict", _verdict(sample.get("sample_verdict"))]]
     if sample.get("sample_verdict_reason_description"):
         rows.append(["Reason", _h(sample["sample_verdict_reason_description"])])
@@ -474,11 +473,11 @@ def render_screenshot_comments(report: dict[str, Any], max_bytes: int) -> list[s
     return [_assemble(chunk, index, len(chunks)) for index, chunk in enumerate(chunks, start=1)]
 
 
-_TREE_MAX_DEPTH = 10  # long.html's cap, so a deep chain still renders
+_TREE_MAX_DEPTH = 10  # deeper levels are not drawn, so a very deep chain still renders
 
 
 def _tree_row(child: dict[str, Any], count: int) -> str:
-    """One long.html tree row: verdict, name, type, child count and report link. No detail sections."""
+    """One tree row: verdict, name, type, child count and report link. No detail sections."""
     parts = [_verdict(child.get("sample_verdict")), f"<b>{_h(_sample_name(child))}</b>"]
     if child.get("sample_type"):
         parts.append(_h(child["sample_type"]))
@@ -490,7 +489,7 @@ def _tree_row(child: dict[str, Any], count: int) -> str:
 
 
 def _child_tree(children: Any, depth: int = 1) -> list[str]:
-    """long.html's child-sample hierarchy: a sample with children is a collapsed toggle whose summary is
+    """The child-sample hierarchy: a sample with children is a collapsed toggle whose summary is
     its row, its children indented below in a <dd> (a <blockquote> adds a line of space above and below);
     a leaf is a plain row, padded to line up."""
     lines = []
@@ -517,6 +516,20 @@ def _child_samples(sample: dict[str, Any]) -> list[str]:
     return []
 
 
+_REASON_MAX = 300  # characters of an error's reason shown in the comment
+
+
+def _error_list(errors: dict[Any, Any]) -> list[str]:
+    """One markdown list item per failure: what failed (as code) and why (as escaped text), sorted by key."""
+    items = []
+    for key, reason in sorted(errors.items(), key=lambda item: str(item[0])):
+        reason = " ".join(_str(reason).split()) or "unknown error"
+        if len(reason) > _REASON_MAX:
+            reason = reason[:_REASON_MAX] + "…"
+        items.append(f"- {_code(key)} — {_text(reason)}")
+    return items
+
+
 def _render_sample(sample: dict[str, Any]) -> list[str]:
     iocs = _dict(_dict(sample.get("sample_iocs")).get("iocs"))
     lines = [
@@ -531,15 +544,19 @@ def _render_sample(sample: dict[str, Any]) -> list[str]:
         *_child_samples(sample),
     ]
     if _dict(sample.get("errors")):
-        # a markdown paragraph, not an HTML block: escaped as markdown text
-        failed = ", ".join(_text(e) for e in sorted(map(str, sample["errors"])))
-        lines += ["", f"⚠️ _Partial data — these sections failed to load: {failed}._"]
+        # markdown, not an HTML block: keys as code spans, reasons escaped as markdown text
+        lines += ["", "⚠️ _Partial data — these parts failed to load:_", "", *_error_list(sample["errors"])]
     return lines
 
 
 def render_report(report: dict[str, Any]) -> str:
     samples = _dicts(report.get("samples"))
+    errors = _dict(report.get("errors"))
     lines = [_heading("VMRay Report", 5)]
+    if not samples and errors:
+        # nothing to report because every sample failed — not the same as VMRay knowing nothing
+        lines += ["", "**No report could be built: none of the requested samples could be fetched from VMRay.**"]
+        return "\n".join([*lines, "", *_error_list(errors)])
     if not samples:
         lines += ["", "**No matches found for this sample.**"]
     for index, sample in enumerate(samples, start=1):
@@ -547,16 +564,15 @@ def render_report(report: dict[str, Any]) -> str:
             lines += ["", "---", "", _heading(f"Sample {index} of {len(samples)}", 4)]
         # one line per section, with no blank line between them: together they form one HTML block
         lines += ["", *_render_sample(sample)]
-    if _dict(report.get("errors")):
-        failed = ", ".join(_text(e) for e in sorted(map(str, report["errors"])))
-        lines += ["", f"⚠️ _These samples could not be fetched from VMRay: {failed}._"]
+    if errors:
+        lines += ["", "⚠️ _These samples could not be fetched from VMRay:_", "", *_error_list(errors)]
     return "\n".join(lines)
 
 
 class RenderReport(VMRayAction):
-    name = "Render report"
+    name = "Render Report"
     description = (
-        "Render a Build report result into one alert comment laid out like the VMRay TheHive report: "
+        "Render a Build Report result into one alert comment laid out like VMRay's own report: "
         "overview, detections, IOC summary, threat identifiers, MITRE ATT&CK, IOCs, analyses, screenshots and "
         "child samples."
     )

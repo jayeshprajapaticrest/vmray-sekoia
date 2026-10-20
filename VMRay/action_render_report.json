@@ -1,12 +1,13 @@
 {
-  "name": "Render report",
-  "description": "Render a Build report result into one alert comment laid out like the VMRay TheHive report: overview, detections, IOC summary, threat identifiers, MITRE ATT&CK, IOCs, analyses, screenshots and child samples.",
-  "uuid": "50ada8d7-00d0-52fd-850a-9e72765673c4",
+  "name": "Render Report",
+  "slug": "render_report",
+  "description": "Render a Build Report result into one alert comment laid out like VMRay's own report: overview, detections, IOC summary, threat identifiers, MITRE ATT&CK, IOCs, analyses, screenshots and child samples.",
+  "uuid": "f6426a65-3f5b-5157-842e-d2ec2db51000",
   "docker_parameters": "RenderReport",
   "arguments": {
     "properties": {
       "report_path": {
-        "description": "The report file written by Build report \u2014 its `report_path` result.",
+        "description": "The report file written by Build Report \u2014 its `report_path` result.",
         "title": "Report path",
         "type": "string"
       },
@@ -30,7 +31,7 @@
   "results": {
     "properties": {
       "content": {
-        "description": "The report as markdown, without screenshot images \u2014 ready for post-alerts/{uuid}/comments.",
+        "description": "The report as one alert comment (HTML inside markdown), without the screenshot images \u2014 give it to the Comment Alert action as its content.",
         "title": "Content",
         "type": "string"
       },

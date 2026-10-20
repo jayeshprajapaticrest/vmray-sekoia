@@ -132,7 +132,7 @@ def test_overview_is_a_property_value_table_like_every_other_section(content):
     assert "VTI Score" not in content  # not shown in the overview
     assert row("<b>URL</b>", code("http://evil.example/login"), nowrap={0}) in table
     assert "sample.url" not in content  # a URL sample's container filename is noise
-    assert row("<b>Created</b>", "2026-09-24 04:59:46", nowrap={0}) in table  # long.html's date format
+    assert row("<b>Created</b>", "2026-09-24 04:59:46", nowrap={0}) in table
     assert row("<b>SHA256</b>", code("a" * 64), nowrap={0}) in table  # breaks inside its cell, not the label
     assert (
         row("<b>Report</b>", '<a href="https://eu.cloud.vmray.com/samples/42">View in VMRay</a>', nowrap={0}) in table
@@ -179,7 +179,7 @@ def test_mitre_id_buttons_then_collapsed_details(content):
     link = '<a href="https://attack.mitre.org/techniques/T1204/002/">T1204.002</a>'
     section = section_line(content, "MITRE ATT&amp;CK")
     assert section.startswith(heading("MITRE ATT&amp;CK") + f"<div>{link}</div>")  # button row, always visible
-    assert "<details><summary>Details</summary>" in section  # collapsed, as in long.html
+    assert "<details><summary>Details</summary>" in section  # collapsed
     assert row(link, "Malicious File", "Execution", nowrap={0}) in section
 
 
@@ -230,8 +230,8 @@ def test_every_toggle_is_closed(content):
     assert content.count("<details") == content.count("</details>")
 
 
-def test_partial_data_warning(content):
-    assert "failed to load: sample\\_threat\\_names" in content  # markdown-escaped, renders as sample_threat_names
+def test_partial_data_warning_names_each_part_and_why(content):
+    assert "⚠️ _Partial data — these parts failed to load:_\n\n- `sample_threat_names` — timed out" in content
 
 
 def test_screenshots_never_rendered(content):
@@ -279,11 +279,32 @@ def test_multiple_samples_and_report_errors():
 
     assert title("Sample 1 of 2", 4) in content
     assert title("Sample 2 of 2", 4) in content
-    assert "could not be fetched from VMRay: 41" in content
+    assert "⚠️ _These samples could not be fetched from VMRay:_\n\n- `41` — x" in content
+    assert "No report could be built" not in content  # some samples were reported
 
 
 def test_no_samples():
     assert render_report({"samples": []}) == title("VMRay Report", 5) + "\n\n**No matches found for this sample.**"
+
+
+def test_every_sample_failed_says_no_report_could_be_built_and_why():
+    errors = {"41": "VMRay API request failed (HTTP 404): unknown sample", "submission:110": "x\ny"}
+
+    content = render_report({"samples": [], "errors": errors})
+
+    assert content == (
+        title("VMRay Report", 5)
+        + "\n\n**No report could be built: none of the requested samples could be fetched from VMRay.**\n\n"
+        + "- `41` — VMRay API request failed \\(HTTP 404\\): unknown sample\n"
+        + "- `submission:110` — x y"  # one line per failure: a line break in a reason is flattened
+    )
+    assert "No matches found" not in content
+
+
+def test_a_long_reason_is_shortened():
+    content = render_report({"samples": [], "errors": {"41": "e" * 1000}})
+
+    assert "- `41` — " + "e" * 300 + "…" in content
 
 
 def test_long_tables_show_every_row():
@@ -317,7 +338,7 @@ def test_children_with_children_are_collapsed_toggles():
         "<details><summary>" + badge("MALICIOUS", RED) + " · <b>payload.exe</b> · (1 child)</summary><dd>"
         "<div>&emsp;" + badge("CLEAN", GREEN) + " · <b>drop.dll</b></div>"
         "</dd></details>"
-    ) in tree  # collapsed (no `open`), as in long.html; the grandchild indented under it
+    ) in tree  # collapsed (no `open`); the grandchild indented under it
     assert "\n" not in tree[tree.index("<details><summary>") : tree.index("</dd></details>")]  # the tree is one line
 
 
@@ -515,9 +536,12 @@ def test_malformed_base64_screenshots_are_dropped():
 
 
 def test_warning_lines_are_escaped_as_markdown():
-    content = render_report({"samples": [], "errors": {"[click](https://evil.example)": "x"}})
+    content = render_report(
+        {"samples": [], "errors": {"[click](https://evil.example)": "[click](https://evil.example)"}}
+    )
 
-    assert "\\[click\\]\\(https:\\/\\/evil.example\\)" in content
+    assert "- `[click](https://evil.example)` — " in content  # the key as a code span: rendered literally
+    assert content.endswith("\\[click\\]\\(https:\\/\\/evil.example\\)")  # the reason as escaped text
 
 
 def test_bare_www_in_any_case_does_not_autolink():

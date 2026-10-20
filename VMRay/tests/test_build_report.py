@@ -162,7 +162,7 @@ def test_duplicate_ids_build_once(requests_mock):
 
 
 def test_default_depth_builds_the_whole_hierarchy(requests_mock):
-    """The analyzer's default: 10 levels."""
+    """Default: 10 levels."""
     mock_full_sample(requests_mock, 42, children=[43])
     mock_full_sample(requests_mock, 43, children=[44])
     mock_full_sample(requests_mock, 44)
@@ -236,17 +236,50 @@ def test_filters_are_forwarded(requests_mock):
         (["malicious", "bogus"], "malicious"),
     ],
 )
-def test_ioc_severity_follows_the_analyzer(values, expected):
+def test_ioc_severity_filter_rule(values, expected):
     """Exactly one valid severity filters; none or both fetch everything; other values are ignored."""
     assert ioc_severity(values) == expected
 
 
-def test_unknown_analysis_verdicts_are_ignored(requests_mock):
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"analysis_verdict_filter": ["bogus"]},
+        {"ioc_severity_filter": ["malicous"]},  # typo
+        {"ioc_severity_filter": ["clean"]},  # an analysis verdict, not an IOC severity
+    ],
+)
+def test_a_filter_with_no_valid_value_fails_before_any_call(requests_mock, arguments):
+    """Ignoring it would silently report everything, as if the filter were empty."""
+    with pytest.raises(ValueError, match="has no valid value"):
+        make_action().run({"sample_ids": [42], **arguments})
+
+    assert requests_mock.call_count == 0
+
+
+def test_an_invalid_value_next_to_a_valid_one_is_ignored(requests_mock):
     mock_full_sample(requests_mock, 42)
 
-    sample = build({"sample_ids": [42], "analysis_verdict_filter": ["bogus"]})["samples"][0]
+    sample = build(
+        {"sample_ids": [42], "analysis_verdict_filter": ["bogus", "malicious"], "ioc_severity_filter": [" "]}
+    )["samples"][0]
 
-    assert [a["analysis_id"] for a in sample["sample_analyses"]] == [1, 2]  # as if empty: nothing filtered out
+    assert [a["analysis_id"] for a in sample["sample_analyses"]] == [1]  # filtered on "malicious" only
+
+
+def test_a_child_sample_only_gets_its_sample_object_and_iocs(requests_mock):
+    """The comment shows a child as one tree row and Extract IOCs reads its IOCs: nothing else is fetched."""
+    mock_full_sample(requests_mock, 42, children=[43])
+    mock_full_sample(requests_mock, 43)
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    child_paths = sorted({r.path for r in requests_mock.request_history if "43" in r.path})
+    assert child_paths == ["/rest/sample/43", "/rest/sample/43/iocs"]
+    child = sample["sample_child_samples"][0]
+    assert child["sample_iocs"]["iocs"]["urls"][0]["url"] == "http://evil.example"
+    assert child["sample_analyses"] == [] and child["sample_threat_indicators"] == {} and child["errors"] == {}
+    assert sample["sample_analyses"] and sample["sample_threat_indicators"]  # the top-level sample gets everything
 
 
 def test_unfetchable_child_is_recorded_on_the_parent(requests_mock):
@@ -260,7 +293,7 @@ def test_unfetchable_child_is_recorded_on_the_parent(requests_mock):
     assert sample["sample_iocs"]["iocs"]["urls"]  # parent report still complete
 
 
-# -- screenshots (the analyzer's _fetch_screenshots) ------------------------------------
+# -- screenshots ------------------------------------------------------------------------
 
 
 def png(width, height, color=(200, 30, 30)):
@@ -307,7 +340,7 @@ def test_screenshots_are_embedded_as_compressed_jpeg_newest_analysis_first(reque
 
     assert sample["has_screenshots"] is True
     newest, older = sample["sample_analyses"]
-    assert newest["analysis_id"] == 2  # sorted newest first, as in the analyzer
+    assert newest["analysis_id"] == 2  # sorted newest first
     shot = newest["analysis_screenshots"][0]
     assert shot["name"] == "b.png"  # "screenshots/" prefix stripped
     image = Image.open(io.BytesIO(base64.b64decode(shot["data"])))
@@ -355,6 +388,29 @@ def test_unreadable_screenshot_is_skipped_and_the_rest_kept(requests_mock):
     sample = build({"sample_ids": [42]})["samples"][0]
 
     assert [s["name"] for s in sample["sample_analyses"][0]["analysis_screenshots"]] == ["ok.png"]
+    assert set(sample["errors"]) == {"screenshot:1/broken.png"}  # named, so the analyst knows one is missing
+    assert "UnidentifiedImageError" in sample["errors"]["screenshot:1/broken.png"]
+
+
+def test_a_screenshot_that_cannot_be_fetched_is_named_in_errors(requests_mock):
+    shots = {"gone.png": png(20, 20), "ok.png": png(20, 20)}
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {1: shots})
+    requests_mock.get(f"{BASE_URL}/rest/analysis/1/archive/screenshots/gone.png", status_code=404, json={})
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert [s["name"] for s in sample["sample_analyses"][0]["analysis_screenshots"]] == ["ok.png"]
+    assert "HTTP 404" in sample["errors"]["screenshot:1/gone.png"]
+
+
+def test_a_screenshot_list_that_cannot_be_read_is_named_in_errors(requests_mock):
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {})
+    requests_mock.get(f"{BASE_URL}/rest/analysis/1/archive/logs/summary.json", status_code=400, json={})
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["has_screenshots"] is False
+    assert "screenshot list could not be read" in sample["errors"]["screenshots:1"]
 
 
 def test_missing_screenshot_summary_never_fails_the_report(requests_mock):
@@ -421,7 +477,8 @@ def test_a_blank_inline_report_alone_is_missing():
 
 
 @pytest.mark.parametrize(
-    "summary", [b"[]", b"null", b'{"screenshots": "x"}', b'{"screenshots": ["screenshots/a.png"]}']
+    "summary",
+    [b"[]", b"null", b'{"screenshots": "x"}', b'{"screenshots": ["screenshots/a.png"]}', b"<html>not json"],
 )
 def test_malformed_screenshot_summary_is_skipped(requests_mock, summary):
     mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {})
@@ -430,6 +487,17 @@ def test_malformed_screenshot_summary_is_skipped(requests_mock, summary):
     sample = build({"sample_ids": [42]})["samples"][0]
 
     assert sample["has_screenshots"] is False
+    assert "screenshots:1" in sample["errors"]
+
+
+def test_a_summary_without_screenshots_is_not_an_error(requests_mock):
+    mock_screenshot_sample(requests_mock, 42, [{"analysis_id": 1}], {})
+    requests_mock.get(f"{BASE_URL}/rest/analysis/1/archive/logs/summary.json", content=b"{}")
+
+    sample = build({"sample_ids": [42]})["samples"][0]
+
+    assert sample["has_screenshots"] is False
+    assert sample["errors"] == {}
 
 
 def test_unusable_images_are_skipped_and_the_rest_kept(requests_mock):
@@ -439,7 +507,7 @@ def test_unusable_images_are_skipped_and_the_rest_kept(requests_mock):
     sample = build({"sample_ids": [42]})["samples"][0]
 
     names = [s["name"] for s in sample["sample_analyses"][0]["analysis_screenshots"]]
-    assert "ok.png" in names  # a 1000x1 image no longer shrinks to 0 px and crashes
+    assert "ok.png" in names  # a 1000x1 image must not shrink to 0 px and crash
 
 
 def test_oversized_image_is_skipped_before_decoding(requests_mock, monkeypatch):
@@ -542,17 +610,17 @@ def test_one_odd_sample_does_not_cost_the_others(requests_mock):
     assert "41" in result["errors"]
 
 
-# -- load_report: the report file Render report and Extract IOCs read ---------------------------------------
+# -- load_report: the report file Render Report and Extract IOCs read ---------------------------------------
 
 
 @pytest.mark.parametrize(
     "report_path,content,message",
     [
-        ("../outside.json", None, "must be a Build report file"),
-        ("/etc/hostname", None, "must be a Build report file"),
+        ("../outside.json", None, "must be a Build Report file"),
+        ("/etc/hostname", None, "must be a Build Report file"),
         ("missing.json", None, "No report file"),
         ("broken.json", b"not json", "could not be read"),
-        ("list.json", b"[1, 2]", "Not a Build report result"),
+        ("list.json", b"[1, 2]", "Not a Build Report result"),
     ],
 )
 def test_report_path_problems_give_a_clear_error(storage, report_path, content, message):
@@ -584,5 +652,5 @@ def test_report_path_works_on_storage_that_cannot_resolve_paths(requests_mock, s
     monkeypatch.setattr(RenderReport, "data_path", property(lambda self: S3LikePath(storage)))
 
     assert "MALICIOUS" in RenderReport().run({"report_path": report_path})["content"]
-    with pytest.raises(ValueError, match="must be a Build report file"):
+    with pytest.raises(ValueError, match="must be a Build Report file"):
         RenderReport().run({"report_path": "../" + report_path})

@@ -1,12 +1,13 @@
 {
-  "name": "Build report",
-  "description": "Build the full VMRay report for sample IDs or submission IDs: analyses, VTIs, MITRE ATT&CK, IOCs, classifications, threat names and screenshots per sample, including child samples.",
-  "uuid": "a1414b6a-9500-55b8-8a5f-385bc3820501",
+  "name": "Build Report",
+  "slug": "build_report",
+  "description": "Build the full VMRay report for sample IDs or submission IDs: analyses, VTIs, MITRE ATT&CK, IOCs, classifications, threat names and screenshots per sample, plus its child samples with their IOCs.",
+  "uuid": "8fef9429-5a84-5f96-b5c6-c152e2d8ad30",
   "docker_parameters": "BuildReport",
   "arguments": {
     "properties": {
       "sample_ids": {
-        "description": "VMRay sample IDs \u2014 e.g. the `sample_ids` of Get samples by hash.",
+        "description": "VMRay sample IDs \u2014 e.g. the `sample_ids` of Get Samples By Hash.",
         "items": {
           "type": "integer"
         },
@@ -14,7 +15,7 @@
         "type": "array"
       },
       "submission_ids": {
-        "description": "VMRay submission IDs \u2014 e.g. the `submission_ids` of Submit URL sample. Each is resolved to its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
+        "description": "VMRay submission IDs \u2014 e.g. the `submission_ids` of Submit URL Sample. Each is resolved to its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
         "items": {
           "type": "integer"
         },
@@ -30,7 +31,7 @@
         "type": "integer"
       },
       "ioc_severity_filter": {
-        "description": "Restrict which IOC severities are fetched from VMRay. Allowed values: 'malicious', 'suspicious'. Add exactly one to filter server-side; leave empty (or add both) to fetch both severities.",
+        "description": "Restrict which IOC severities are fetched from VMRay. Allowed values: 'malicious', 'suspicious'. Add exactly one to filter server-side; leave empty (or add both) to fetch both severities. A list with no valid value is an error.",
         "items": {
           "type": "string"
         },
@@ -38,7 +39,7 @@
         "type": "array"
       },
       "analysis_verdict_filter": {
-        "description": "Analysis verdicts to include in the report. Allowed values: 'malicious', 'suspicious', 'clean'. Leave empty to include all analyses, including those with an unknown verdict. Note: Adding all three allowed values is NOT the same as leaving empty \u2014 it still excludes analyses with unknown verdicts.",
+        "description": "Analysis verdicts to include in the report. Allowed values: 'malicious', 'suspicious', 'clean'. Leave empty to include all analyses, including those with an unknown verdict. Note: Adding all three allowed values is NOT the same as leaving empty \u2014 it still excludes analyses with unknown verdicts. A list with no valid value is an error.",
         "items": {
           "type": "string"
         },
@@ -59,7 +60,7 @@
     "description": "Only a summary travels inline. The report itself \u2014 screenshots included \u2014 can be megabytes, far over\nSekoia's limit on action arguments (SYM216), so it is written to data_path and passed on as a file.",
     "properties": {
       "report_path": {
-        "description": "Path (relative to data_path) of the full report JSON \u2014 give it to Render report and Extract IOCs as `report_path`.",
+        "description": "Path (relative to data_path) of the full report JSON \u2014 give it to Render Report and Extract IOCs as `report_path`.",
         "title": "Report Path",
         "type": "string"
       },

@@ -1,7 +1,8 @@
 {
-  "name": "Get samples by hash",
+  "name": "Get Samples By Hash",
+  "slug": "get_samples_by_hash",
   "description": "Look up SHA256/SHA1/MD5 hashes in VMRay's existing analyses and return every matching sample \u2014 costs no quota.",
-  "uuid": "aaff4dee-bfd6-5958-9b15-0dc4bc8d5abb",
+  "uuid": "ef382164-6133-5fa2-b380-622c026789d1",
   "docker_parameters": "GetSamplesByHash",
   "arguments": {
     "properties": {

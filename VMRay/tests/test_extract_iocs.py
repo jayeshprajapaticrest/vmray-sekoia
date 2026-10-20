@@ -110,17 +110,26 @@ def test_indicators_are_deduplicated():
     assert len(extract_iocs(report, ["malicious"], include_child_iocs=True)) == 1
 
 
-def test_action_defaults_to_malicious_iocs_and_children():
+def test_action_defaults_to_every_ioc_and_children():
     result = ExtractIocs().run({"report": REPORT})
 
     assert {"type": "domain", "value": "evil.example"} in result["indicators"]
-    assert {"type": "IP address", "value": "203.0.113.9"} in result["indicators"]
+    assert {"type": "IP address", "value": "203.0.113.9"} in result["indicators"]  # a child's IOC
+    assert {"type": "domain", "value": "sus.example"} in result["indicators"]  # suspicious
+    assert {"type": "domain", "value": "unrated.example"} in result["indicators"]  # no severity
+    assert {"type": "hash", "value": "e" * 64} in result["indicators"]  # the clean grandchild's SHA256
+
+
+def test_action_with_a_malicious_filter():
+    result = ExtractIocs().run({"report": REPORT, "ioc_severity_filter": ["malicious"]})
+
     assert {"type": "domain", "value": "sus.example"} not in result["indicators"]
+    assert {"type": "hash", "value": "e" * 64} not in result["indicators"]
 
 
 def test_action_groups_indicators_by_type():
     """One group per non-empty type, in push order — the playbook's Foreach makes one add_ioc call per group."""
-    result = ExtractIocs().run({"report": REPORT})
+    result = ExtractIocs().run({"report": REPORT, "ioc_severity_filter": ["malicious"]})
 
     assert result["indicator_groups"] == [
         {"type": "hash", "indicators": ["f" * 64, "d" * 64]},
@@ -298,3 +307,10 @@ def test_odd_shapes_extract_nothing_instead_of_failing(sample_iocs):
     report = {"samples": [{"sample_id": 1, "sample_iocs": sample_iocs}, "not a sample"]}
 
     assert extract_iocs(report, ["malicious"], include_child_iocs=True) == []
+
+
+def test_the_default_filter_is_empty():
+    """Every IOC by default; restricting to malicious (or suspicious) is a choice made on the node."""
+    from vmray_modules.report_models import ExtractIocsArguments
+
+    assert ExtractIocsArguments(report_path="r.json").ioc_severity_filter == []

@@ -13,9 +13,8 @@ from vmray_modules.report_models import ReportInput
 
 
 class VMRayAction(Action):
-    """Shared base for every VMRay action. Mirrors Glimps/glimps/base.py's
-    shape: one cached client, built once per action run from the module
-    configuration."""
+    """Shared base for every VMRay action. One cached client,
+    built once per action run from the module configuration."""
 
     module: VMRayModule
 
@@ -31,7 +30,7 @@ class VMRayAction(Action):
         )
 
     def load_report(self, arguments: ReportInput) -> dict[str, Any]:
-        """The Build report result: the file at `report_path`, else the inline `report`. An empty `report` counts
+        """The Build Report result: the file at `report_path`, else the inline `report`. An empty `report` counts
         as not given — Sekoia's playbook editor sends `{}` for an object input left blank, and taking that over
         `report_path` would render and extract an empty report.
 
@@ -42,11 +41,11 @@ class VMRayAction(Action):
             # supports neither resolve() nor symlinks — a relative path without ".." cannot leave it.
             relative = PurePosixPath(arguments.report_path.replace("\\", "/"))
             if relative.is_absolute() or ".." in relative.parts or not relative.parts:
-                raise ValueError(f"report_path must be a Build report file: {arguments.report_path!r}")
+                raise ValueError(f"report_path must be a Build Report file: {arguments.report_path!r}")
             try:
                 data = orjson.loads(self.data_path.joinpath(*relative.parts).read_bytes())
             except FileNotFoundError:
-                raise ValueError(f"No report file at {arguments.report_path!r} — give Build report's report_path")
+                raise ValueError(f"No report file at {arguments.report_path!r} — give Build Report's report_path")
             except Exception as exc:  # local or S3 storage, each with its own errors
                 raise ValueError(f"The report file {arguments.report_path!r} could not be read: {exc}") from exc
         elif arguments.report:
@@ -56,4 +55,4 @@ class VMRayAction(Action):
         try:
             return Report.model_validate(data).model_dump(mode="json")
         except ValidationError as exc:
-            raise ValueError(f"Not a Build report result: {exc.error_count()} invalid field(s)") from exc
+            raise ValueError(f"Not a Build Report result: {exc.error_count()} invalid field(s)") from exc

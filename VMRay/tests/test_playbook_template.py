@@ -28,7 +28,9 @@ from vmray_modules.get_samples_by_hash_action import GetSamplesByHash
 from vmray_modules.render_report_action import RenderReport
 from vmray_modules.submit_url_sample_action import SubmitUrlSample
 
-TEMPLATE = Path(__file__).resolve().parents[2] / "playbooks" / "templates" / "vmray_report_on_demand.json"
+# A copy of playbooks/templates/vmray_report_on_demand.json, so the module's tests run on their own
+TEMPLATE = Path(__file__).parent / "data" / "vmray_report_on_demand.json"
+PUBLISHED_TEMPLATE = Path(__file__).resolve().parents[2] / "playbooks" / "templates" / "vmray_report_on_demand.json"
 
 ALERT = {
     "uuid": "5b7f9a1e-0000-4000-8000-000000000001",
@@ -40,10 +42,10 @@ ALERT = {
 VMRAY_ACTIONS = {
     cls_uuid: cls
     for cls_uuid, cls in [
-        ("aaff4dee-bfd6-5958-9b15-0dc4bc8d5abb", GetSamplesByHash),
-        ("c53a0834-7ea3-58c9-ac39-5c504c78e1f2", SubmitUrlSample),
-        ("a1414b6a-9500-55b8-8a5f-385bc3820501", BuildReport),
-        ("50ada8d7-00d0-52fd-850a-9e72765673c4", RenderReport),
+        ("ef382164-6133-5fa2-b380-622c026789d1", GetSamplesByHash),
+        ("10c9d58f-4e09-53c6-ba6a-91a765dc5634", SubmitUrlSample),
+        ("8fef9429-5a84-5f96-b5c6-c152e2d8ad30", BuildReport),
+        ("f6426a65-3f5b-5157-842e-d2ec2db51000", RenderReport),
         ("b260276d-2d98-5e4a-8be8-a960dc3a5e0c", ExtractIocs),
     ]
 }
@@ -274,6 +276,12 @@ def pushed(run: Run) -> set[tuple[str, str]]:
 # -- scenarios ----------------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(not PUBLISHED_TEMPLATE.exists(), reason="the published playbook templates are not alongside")
+def test_template_copy_matches_the_published_template():
+    """Where the published template sits alongside the module, the tested copy must be the same playbook."""
+    assert json.loads(TEMPLATE.read_text()) == json.loads(PUBLISHED_TEMPLATE.read_text())
+
+
 def test_known_hash(playbook, requests_mock):
     FakeVMRay(requests_mock)
 
@@ -288,7 +296,7 @@ def test_known_hash(playbook, requests_mock):
     assert sum(c.count("<img") for c in screenshot_comments(run)) == 2
     assert ("IP address", "203.0.113.9") in pushed(run)  # child's IOC
     assert ("domain", "login-check.example") in pushed(run)
-    assert ("domain", "cdn.example") not in pushed(run)  # suspicious only
+    assert ("domain", "cdn.example") in pushed(run)  # every severity by default
     assert len(run.ioc_pushes) == len({t for t, _ in run.ioc_pushes})  # one push per indicator type
 
 
@@ -342,7 +350,8 @@ def test_clean_sample_no_iocs_no_screenshots(playbook, requests_mock):
     vmray = FakeVMRay(requests_mock)
     requests_mock.get(f"{BASE_URL}/rest/sample/sha256/{'e' * 64}", json=ok([vmray.samples[44]]))
 
-    run = playbook([{"file.hash.sha256": "e" * 64}])
+    # only malicious IOCs: the clean sample's single suspicious IOC is filtered out, so nothing is pushed
+    run = playbook([{"file.hash.sha256": "e" * 64}], node_13={"ioc_severity_filter": ["malicious"]})
 
     assert not run.failures  # both Foreach guards hold
     assert run.ran("13") and not run.ran("14") and not run.ran("27")
@@ -511,9 +520,11 @@ def test_screenshots_disabled(playbook, requests_mock):
     assert not run.failures and not run.ran("27") and screenshot_comments(run) == []
 
 
-def test_suspicious_iocs_too(playbook, requests_mock):
+def test_malicious_iocs_only_when_filtered(playbook, requests_mock):
     FakeVMRay(requests_mock)
 
-    run = playbook([{"file.hash.sha256": SHA256}], node_13={"ioc_severity_filter": ["malicious", "suspicious"]})
+    run = playbook([{"file.hash.sha256": SHA256}], node_13={"ioc_severity_filter": ["malicious"]})
 
-    assert ("domain", "cdn.example") in pushed(run)
+    assert ("domain", "login-check.example") in pushed(run)
+    assert ("domain", "cdn.example") not in pushed(run)  # suspicious
+    assert ("hash", "e" * 64) not in pushed(run)  # clean grandchild

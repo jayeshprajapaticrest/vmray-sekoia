@@ -1,11 +1,9 @@
 """SubmitUrlSample — POST /sample/submit with a URL, then poll every resulting
 submission until it finishes.
 
-Follows the Cortex-Analyzers VMRay analyzer: `submit_url_sample`, then
-`_wait_for_results`, which polls ALL submissions in the submit response through
-`update_submission` until each reports `submission_finished`, sleeping
-`query_retry_wait` between rounds. One difference: the reference waits forever;
-this stops at `timeout` and reports what is still pending.
+Polls ALL submissions in the submit response (GET /submission/{id}) until each
+reports `submission_finished`, sleeping `query_retry_wait` between rounds, and
+stops at `timeout`, reporting what is still pending.
 
 Returns the finished submissions, their submission_ids and sample_ids. Building
 the full report (VTIs, IOCs, MITRE ATT&CK) is a separate action that takes
@@ -26,7 +24,7 @@ _MAX_POLL_FAILURES = 3  # consecutive failed polls of one submission before it i
 
 
 class SubmitUrlSample(VMRayAction):
-    name = "Submit URL sample"
+    name = "Submit URL Sample"
     description = "Submit a URL to VMRay, wait until every resulting submission has finished, and return them."
     results_model = SubmitUrlSampleResults
 

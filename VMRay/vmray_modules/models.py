@@ -2,10 +2,8 @@
 Data models of the VMRay module.
 
 Field names on VMRay-sourced models follow the VMRay Platform REST API
-(OpenAPI spec, v2026.2.1) verbatim — see spikes/specs/vmray-openapi-2026.2.1.json
-in the design repo. They are NOT renamed to snake_case-without-prefix or to
-Sekoia conventions, so a field here can always be grep'd straight back to the
-spec it came from.
+(OpenAPI spec, v2026.2.1) verbatim. They are NOT renamed to Sekoia conventions,
+so a field here can always be traced straight back to the API.
 
 Types are intentionally loose (plain `str` rather than a `Literal`/enum) on
 any VMRay-controlled value whose full set of possibilities was not directly
@@ -59,12 +57,11 @@ class VMRayModule(Module):
 
 
 class SubmissionOptions(BaseModel):
-    """POST /sample/submit form fields, with the descriptions, types and defaults of the
-    Cortex-Analyzers VMRay analyzer's configuration (VMRay.json) — minus its archive
-    settings, which only apply to submitted files. Options left empty
-    are not sent, so the VMRay user's own analyzer settings apply. `net_scheme_name`
-    and `analysis_timeout` are not form fields: they ride inside the `user_config`
-    JSON string (as `net_scheme_name` and `timeout`)."""
+    """POST /sample/submit form fields — without the archive settings, which only apply
+    to submitted files. Options left empty are not sent, so the VMRay user's own
+    analyzer settings apply. `net_scheme_name` and `analysis_timeout` are not form
+    fields: they ride inside the `user_config` JSON string (as `net_scheme_name` and
+    `timeout`)."""
 
     model_config = {"json_schema_extra": hide_empty_defaults}
 
@@ -153,8 +150,8 @@ class SubmitUrlSampleArguments(SubmissionOptions):
         default=1800,
         ge=0,
         allow_inf_nan=False,
-        description="Maximum time (seconds) to wait for every submission to finish. The analyzer waits forever; "
-        "this stops and takes the timed_out branch.",
+        description="Maximum time (seconds) to wait for every submission to finish, then the action stops and "
+        "takes the timed_out branch.",
     )
 
     @field_validator("sample_url", mode="before")
@@ -223,15 +220,14 @@ class GetSamplesByHashResults(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# BuildReport — the Cortex-Analyzers VMRay analyzer's `_build_report`
+# BuildReport
 # --------------------------------------------------------------------------
 
 
 class ReportSample(BaseModel):
-    """One sample in a report, in the Cortex-Analyzers VMRay analyzer's shape: the full
-    GET /sample/{id} object, plus the sub-resources fetched for it under the analyzer's
-    keys, plus its child samples nested the same way. VMRay's own sample fields pass
-    through untouched (extra: allow)."""
+    """One sample in a report: the full GET /sample/{id} object, plus the sub-resources
+    fetched for it (`sample_analyses`, `sample_iocs`, ...), plus its child samples nested
+    the same way. VMRay's own sample fields pass through untouched (extra: allow)."""
 
     model_config = {"extra": "allow"}
 
@@ -247,7 +243,7 @@ class ReportSample(BaseModel):
     sample_threat_indicators: dict[str, Any] = Field(default_factory=dict, description="GET /sample/{id}/vtis")
     sample_mitre_attack: dict[str, Any] = Field(default_factory=dict, description="GET /sample/{id}/mitre_attack")
     sample_iocs: dict[str, Any] = Field(default_factory=dict, description="GET /sample/{id}/iocs")
-    sample_child_samples: list["ReportSample"] = Field(
+    sample_child_samples: list[ReportSample] = Field(
         default_factory=list, description="Child samples, built the same way, down to max_recursion_depth."
     )
     has_screenshots: bool = Field(default=False, description="Any analysis in sample_analyses carries screenshots.")
@@ -278,11 +274,11 @@ class BuildReportArguments(BaseModel):
     model_config = {"json_schema_extra": hide_empty_defaults}
 
     sample_ids: list[int] | SkipJsonSchema[None] = Field(
-        default=None, description="VMRay sample IDs — e.g. the `sample_ids` of Get samples by hash."
+        default=None, description="VMRay sample IDs — e.g. the `sample_ids` of Get Samples By Hash."
     )
     submission_ids: list[int] | SkipJsonSchema[None] = Field(
         default=None,
-        description="VMRay submission IDs — e.g. the `submission_ids` of Submit URL sample. Each is resolved to "
+        description="VMRay submission IDs — e.g. the `submission_ids` of Submit URL Sample. Each is resolved to "
         "its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
     )
     max_recursion_depth: int = Field(
@@ -295,13 +291,15 @@ class BuildReportArguments(BaseModel):
     ioc_severity_filter: list[str] = Field(
         default_factory=list,
         description="Restrict which IOC severities are fetched from VMRay. Allowed values: 'malicious', "
-        "'suspicious'. Add exactly one to filter server-side; leave empty (or add both) to fetch both severities.",
+        "'suspicious'. Add exactly one to filter server-side; leave empty (or add both) to fetch both severities. A "
+        "list with no valid value is an error.",
     )
     analysis_verdict_filter: list[str] = Field(
         default_factory=list,
         description="Analysis verdicts to include in the report. Allowed values: 'malicious', 'suspicious', "
         "'clean'. Leave empty to include all analyses, including those with an unknown verdict. Note: Adding all "
-        "three allowed values is NOT the same as leaving empty — it still excludes analyses with unknown verdicts.",
+        "three allowed values is NOT the same as leaving empty — it still excludes analyses with unknown verdicts. A "
+        "list with no valid value is an error.",
     )
     include_screenshots: bool = Field(
         default=True,
@@ -327,7 +325,7 @@ class BuildReportResults(BaseModel):
 
     report_path: str = Field(
         ...,
-        description="Path (relative to data_path) of the full report JSON — give it to Render report and "
+        description="Path (relative to data_path) of the full report JSON — give it to Render Report and "
         "Extract IOCs as `report_path`.",
     )
     sample_ids: list[int] = Field(default_factory=list, description="Samples in the report.")
@@ -367,17 +365,3 @@ class Indicator(BaseModel):
 
     value: str
     type: str
-
-
-# --------------------------------------------------------------------------
-# NOTE: there is no RevokeIndicators action here.
-#
-# DELETE /v2/inthreat/ioc-collections/{uuid}/indicators/{id} is a SEKOIA
-# endpoint (Intelligence Center), not a VMRay one — this module's
-# configuration only carries VMRay credentials. It was originally drafted
-# into this module by mistake; every module in this ecosystem is
-# vendor-scoped (Glimps only calls Glimps, Sekoia.io only calls Sekoia), so
-# indicator revocation belongs in the Sekoia.io module as a second
-# contributed action, alongside "Patch Alert Custom Fields" — see the
-# design doc's open items.
-# --------------------------------------------------------------------------

@@ -12,26 +12,22 @@ BASE_URL = "https://eu.cloud.vmray.com"
 
 
 def test_requests_mock_does_not_exercise_our_retry_adapter(requests_mock):
-    """Documented limitation, not a bug: requests_mock patches the transport
-    at a level that bypasses any HTTPAdapter we mounted, so a persistent 5xx
-    here fails on the FIRST attempt — the opposite of what our real retry
-    adapter does. Confirmed directly (this test used to assert the opposite
-    and failed) so nobody re-discovers this the hard way and trusts a
-    requests_mock-based test to cover retry/Retry-After behaviour again.
-    Real retry/backoff coverage lives in test_client_retry_real_transport.py,
-    against a real local socket — the only way to prove it honestly.
+    """A limitation of requests_mock, pinned down so no test relies on it for retries: it patches the
+    transport at a level that bypasses any HTTPAdapter mounted on the session, so a 5xx here fails on the
+    FIRST attempt — unlike the real retry adapter. Retry and Retry-After behaviour is covered in
+    test_client_retry_real_transport.py, against a real local socket.
     """
     requests_mock.get(
-        f"{BASE_URL}/rest/system_info",
+        f"{BASE_URL}/rest/sample/1",
         [
             {"status_code": 500, "json": {"error_msg": "boom"}},
-            {"json": {"result": "ok", "data": {"version": "2026.2.1"}}},
+            {"json": {"result": "ok", "data": {"sample_id": 1}}},
         ],
     )
     client = VMRayClient(base_url=BASE_URL, api_key="x")
 
     with pytest.raises(BadResponseError):
-        client.system_info()
+        client.get_sample(1)
 
     assert requests_mock.call_count == 1  # no retry happened — this is the limitation, not a passing feature
 
@@ -41,11 +37,11 @@ def test_retry_exhaustion_raises_bad_response_error(requests_mock):
     silently return an empty result — true regardless of whether retries
     fired first (they don't, under requests_mock; they do for real, see
     test_client_retry_real_transport.py)."""
-    requests_mock.get(f"{BASE_URL}/rest/system_info", status_code=503, json={"error_msg": "down"})
+    requests_mock.get(f"{BASE_URL}/rest/sample/1", status_code=503, json={"error_msg": "down"})
     client = VMRayClient(base_url=BASE_URL, api_key="x")
 
     with pytest.raises(BadResponseError):
-        client.system_info()
+        client.get_sample(1)
 
 
 def test_4xx_does_not_retry_and_raises_immediately(requests_mock):
@@ -62,7 +58,7 @@ def test_4xx_does_not_retry_and_raises_immediately(requests_mock):
 
 
 def test_200_with_error_envelope_raises_api_error(requests_mock):
-    """Layer 2 of the error contract: a 200 whose body says result != "ok"
+    """Check 3 of 3 on every response: a 200 whose body says result != "ok"
     must still be treated as a failure, not a success."""
     requests_mock.get(
         f"{BASE_URL}/rest/sample/42",
@@ -128,4 +124,24 @@ def test_submit_is_not_retried_on_a_server_error():
     retry = VMRayClient("https://vmray.example", "k").session.get_adapter("https://vmray.example").max_retries
 
     assert "POST" not in retry.allowed_methods
-    assert retry.retry_after_max <= 120 and retry.backoff_max <= 30
+    assert retry.total == 3 and retry.retry_after_max == 90 and retry.backoff_max <= 30
+
+
+def test_a_long_non_json_error_body_is_shortened(requests_mock):
+    """A proxy's HTML error page must not land whole in the error message."""
+    page = "<html>\n  <body>" + "x" * 5000 + "</body>\n</html>"
+    requests_mock.get(f"{BASE_URL}/rest/sample/1", status_code=403, text=page)
+
+    with pytest.raises(BadResponseError) as exc_info:
+        VMRayClient(base_url=BASE_URL, api_key="x").get_sample(1)
+
+    message = str(exc_info.value)
+    assert message.startswith("VMRay API request failed (HTTP 403): <html> <body>xxx")
+    assert message.endswith("…") and len(message) < 400
+
+
+def test_vmray_error_msg_is_kept_whole(requests_mock):
+    requests_mock.get(f"{BASE_URL}/rest/sample/1", status_code=400, json={"error_msg": "e" * 1000})
+
+    with pytest.raises(BadResponseError, match="e" * 1000):
+        VMRayClient(base_url=BASE_URL, api_key="x").get_sample(1)

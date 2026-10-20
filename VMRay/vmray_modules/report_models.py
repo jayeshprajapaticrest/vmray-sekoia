@@ -1,6 +1,6 @@
 """Models for the actions that consume a BuildReport result (RenderReport,
-ExtractIocs). The report itself keeps the Cortex-Analyzers VMRay analyzer's
-nested shape, so it is taken here as a plain dict."""
+ExtractIocs). The report itself is a nested sample tree (models.ReportSample), so
+it is taken here as a plain dict."""
 
 from typing import Any
 
@@ -16,7 +16,7 @@ class ReportInput(BaseModel):
     report_path: str | SkipJsonSchema[None] = Field(
         default=None,
         title="Report path",
-        description="The report file written by Build report — its `report_path` result.",
+        description="The report file written by Build Report — its `report_path` result.",
     )
     report: dict[str, Any] | SkipJsonSchema[None] = Field(
         default=None,
@@ -38,7 +38,9 @@ class RenderReportArguments(ReportInput):
 
 class RenderReportResults(BaseModel):
     content: str = Field(
-        ..., description="The report as markdown, without screenshot images — ready for post-alerts/{uuid}/comments."
+        ...,
+        description="The report as one alert comment (HTML inside markdown), without the screenshot images — give "
+        "it to the Comment Alert action as its content.",
     )
     screenshot_comments: list[str] = Field(
         default_factory=list,
@@ -49,11 +51,12 @@ class RenderReportResults(BaseModel):
 
 class ExtractIocsArguments(ReportInput):
     ioc_severity_filter: list[str] = Field(
-        default_factory=lambda: ["malicious"],
+        default_factory=list,
         title="IOC severity filter",
         description="Restrict which IOC severities are extracted. Allowed values: 'malicious', 'suspicious'. "
-        "Leave empty to extract every IOC, whatever its severity. A child sample's own SHA256 is extracted when "
-        "its verdict is one of these values.",
+        "Empty (the default) extracts every IOC, whatever its severity, and every child sample's own SHA256, "
+        "whatever its verdict. With values set, a child sample's own SHA256 is extracted when its verdict is one "
+        "of them.",
     )
     include_child_iocs: bool = Field(
         default=True,

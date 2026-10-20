@@ -111,14 +111,14 @@ def test_sends_reference_submission_parameters(requests_mock):
     form = parse_qs(submit.last_request.text)
     assert form["sample_url"] == [URL]
     assert form["tags"] == ["alert-AL1"]
-    assert form["reanalyze"] == ["True"]  # reference default: always a fresh analysis
+    assert form["reanalyze"] == ["True"]  # default: always a fresh analysis
     assert form["shareable"] == ["False"]
     assert form["max_recursive_samples"] == ["10"]
     assert json.loads(form["user_config"][0]) == {"net_scheme_name": "Isolated", "timeout": 120}
 
 
-def test_sends_the_analyzer_defaults(requests_mock):
-    """Like the Cortex analyzer, the recursion limit is always sent; its archive settings are not — they only apply
+def test_sends_the_default_options(requests_mock):
+    """The recursion limit is always sent; archive settings are not — they only apply
     to submitted files."""
     submit = mock_submit(requests_mock, [111])
     requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222)])
@@ -234,3 +234,13 @@ def test_only_documented_fields_are_sent_and_tags_are_cleaned(requests_mock):
     assert "analysis_caching" not in form  # left to the VMRay user's own setting
     assert form["tags"] == ["alert-1,sekoia"]
     assert form["sample_url"] == [URL]
+
+
+def test_reanalyze_false_is_left_out_of_the_form(requests_mock):
+    """Only a true reanalyze is sent; false leaves VMRay's own default in place."""
+    submit = mock_submit(requests_mock, [111])
+    requests_mock.get(f"{BASE_URL}/rest/submission/111", [finished(111, 222)])
+
+    make_action().run({"sample_url": URL, "reanalyze": False})
+
+    assert "reanalyze" not in parse_qs(submit.last_request.text)

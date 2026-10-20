@@ -2,11 +2,10 @@
 real sockets, no requests_mock involved.
 
 requests_mock cannot be used for this: it patches the transport at a level
-that bypasses any adapter WE mounted (confirmed directly — see
-test_client_transport.py's two failing assertions before this file existed).
-So the only honest way to verify "honour Retry-After exactly" and "retry on
-429/5xx" — the whole reason this module doesn't depend on the vmray-rest-api
-vendor SDK — is to exercise the real urllib3.Retry object end to end.
+that bypasses any adapter mounted on the session. So the only way to verify
+"honour Retry-After" and "retry on 429/5xx" — the reason the client is
+hand-rolled rather than built on VMRay's vmray-rest-api package — is to
+exercise the real urllib3.Retry object end to end.
 """
 
 import json
@@ -66,13 +65,13 @@ def test_5xx_is_actually_retried_over_real_sockets(scripted_server):
     _ScriptedHandler.script = [
         (500, {}, {"error_msg": "boom"}),
         (500, {}, {"error_msg": "boom"}),
-        (200, {}, {"result": "ok", "data": {"version": "2026.2.1"}}),
+        (200, {}, {"result": "ok", "data": {"sample_id": 1}}),
     ]
     client = VMRayClient(base_url=base_url, api_key="x")
 
-    result = client.system_info()
+    result = client.get_sample(1)
 
-    assert result == {"version": "2026.2.1"}
+    assert result == {"sample_id": 1}
     assert len(_ScriptedHandler.request_times) == 3  # two real failures, genuinely retried
 
 
@@ -83,27 +82,27 @@ def test_retry_exhaustion_over_real_sockets_eventually_raises(scripted_server):
     client = VMRayClient(base_url=base_url, api_key="x")
 
     with pytest.raises(BadResponseError):
-        client.system_info()
+        client.get_sample(1)
 
-    # total=5 in the mounted Retry -> 1 initial attempt + 5 retries = 6
-    assert len(_ScriptedHandler.request_times) == 6
+    # total=3 in the mounted Retry -> 1 initial attempt + 3 retries = 4
+    assert len(_ScriptedHandler.request_times) == 4
 
 
 @pytest.mark.slow
 def test_429_retry_after_is_actually_honoured(scripted_server):
-    """The entire point of hand-rolling this client over the vendor SDK:
+    """Why the client is hand-rolled rather than built on vmray-rest-api:
     urllib3's respect_retry_after_header must make the real wait between
     attempt 1 and attempt 2 track the server's stated Retry-After value."""
     base_url = scripted_server
     _ScriptedHandler.script = [
         (429, {"Retry-After": "1"}, {"error_msg": "throttled"}),
-        (200, {}, {"result": "ok", "data": {"version": "2026.2.1"}}),
+        (200, {}, {"result": "ok", "data": {"sample_id": 1}}),
     ]
     client = VMRayClient(base_url=base_url, api_key="x")
 
-    result = client.system_info()
+    result = client.get_sample(1)
 
-    assert result == {"version": "2026.2.1"}
+    assert result == {"sample_id": 1}
     assert len(_ScriptedHandler.request_times) == 2
     gap = _ScriptedHandler.request_times[1] - _ScriptedHandler.request_times[0]
     assert gap >= 0.9  # honoured the 1-second Retry-After, not a faster default backoff
