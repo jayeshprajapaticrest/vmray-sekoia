@@ -110,7 +110,7 @@ Extracts a report's IOCs as indicators for Sekoia's "Add IOC to IOC Collection" 
 |---|---|---|
 | `report_path` (or `report`) | required | Build Report's `report_path` |
 | `ioc_severity_filter` | empty | IOC severities to extract: `malicious`, `suspicious`. Each IOC is judged on its own severity; a child sample's own SHA256 on its verdict. Empty (the default) = every IOC and every child sample's SHA256, whatever the severity or verdict; a value outside the allowed ones is ignored next to a valid one, and a filter with no valid value fails the action |
-| `include_child_iocs` | `true` | also extract the child samples' IOCs; `false` = root sample only |
+| `include_child_iocs` | `true` | also extract the child samples' IOCs and each child sample's own SHA256; `false` = root sample only |
 
 **Results:** `indicators` (`[{value, type}]`, deduplicated) and `indicator_groups` - the same values grouped by type, one entry per non-empty type (`[{type, indicators}]`). "Add IOC to IOC Collection" takes one `indicator_type` per call, so a Foreach over `indicator_groups` pushes every type with one node.
 

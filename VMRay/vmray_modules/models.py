@@ -36,12 +36,14 @@ def hide_empty_defaults(schema: dict[str, Any]) -> None:
 class VMRayConfiguration(BaseModel):
     base_url: str = Field(
         ...,
+        title="Base URL",
         description="VMRay Platform URL, e.g. https://eu.cloud.vmray.com or an on-prem appliance URL",
         json_schema_extra={"format": "uri"},
     )
-    api_key: str = Field(..., description="VMRay API key", json_schema_extra={"secret": True})
+    api_key: str = Field(..., title="API Key", description="VMRay API key", json_schema_extra={"secret": True})
     verify_ssl: bool = Field(
         default=True,
+        title="Verify SSL",
         description="Verify the TLS certificate of the VMRay Platform. "
         "Disable only for an on-prem appliance with a self-signed certificate.",
     )
@@ -122,15 +124,15 @@ class Submission(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    submission_id: int
-    submission_sample_id: int | None = None
+    submission_id: int = Field(..., title="Submission ID")
+    submission_sample_id: int | None = Field(default=None, title="Submission Sample ID")
     submission_finished: bool | None = None
     submission_has_errors: bool | None = None
     submission_verdict: str | None = None
     submission_score: int | None = None
-    submission_original_url: str | None = None
+    submission_original_url: str | None = Field(default=None, title="Submission Original URL")
     submission_consumed_quota: int | None = None
-    submission_webif_url: str | None = None
+    submission_webif_url: str | None = Field(default=None, title="Submission Webif URL")
 
 
 class SubmitUrlSampleArguments(SubmissionOptions):
@@ -163,17 +165,25 @@ class SubmitUrlSampleArguments(SubmissionOptions):
 class SubmitUrlSampleResults(BaseModel):
     submissions: list[Submission] = Field(default_factory=list, description="Finished submissions.")
     submission_ids: list[int] = Field(
-        default_factory=list, description="IDs of the finished submissions — input for the report."
+        default_factory=list,
+        title="Submission IDs",
+        description="IDs of the finished submissions — input for the report.",
     )
     sample_ids: list[int] = Field(
-        default_factory=list, description="Distinct sample_ids of the finished submissions — input for the report."
+        default_factory=list,
+        title="Sample IDs",
+        description="Distinct sample_ids of the finished submissions — input for the report.",
     )
     pending_submission_ids: list[int] = Field(
-        default_factory=list, description="Submissions still running when the wait timed out."
+        default_factory=list,
+        title="Pending Submission IDs",
+        description="Submissions still running when the wait timed out.",
     )
     timed_out: bool = False
     failed_submission_ids: list[int] = Field(
-        default_factory=list, description="Submissions that finished with an error, or could not be followed."
+        default_factory=list,
+        title="Failed Submission IDs",
+        description="Submissions that finished with an error, or could not be followed.",
     )
     errors: list[dict[str, Any]] = Field(
         default_factory=list, description="Errors VMRay returned on submit, and why a submission failed."
@@ -207,7 +217,9 @@ class GetSamplesByHashArguments(BaseModel):
 
 class GetSamplesByHashResults(BaseModel):
     found: bool
-    sample_ids: list[int] = Field(default_factory=list, description="Distinct VMRay sample_ids matched.")
+    sample_ids: list[int] = Field(
+        default_factory=list, title="Sample IDs", description="Distinct VMRay sample_ids matched."
+    )
     samples: list[dict[str, Any]] = Field(
         default_factory=list,
         description="The matched sample objects as VMRay returns them from the lookup (verdict, score, hashes, "
@@ -274,10 +286,13 @@ class BuildReportArguments(BaseModel):
     model_config = {"json_schema_extra": hide_empty_defaults}
 
     sample_ids: list[int] | SkipJsonSchema[None] = Field(
-        default=None, description="VMRay sample IDs — e.g. the `sample_ids` of Get Samples By Hash."
+        default=None,
+        title="Sample IDs",
+        description="VMRay sample IDs — e.g. the `sample_ids` of Get Samples By Hash.",
     )
     submission_ids: list[int] | SkipJsonSchema[None] = Field(
         default=None,
+        title="Submission IDs",
         description="VMRay submission IDs — e.g. the `submission_ids` of Submit URL Sample. Each is resolved to "
         "its sample with one GET /submission/{id}. Used when `sample_ids` is empty.",
     )
@@ -328,7 +343,7 @@ class BuildReportResults(BaseModel):
         description="Path (relative to data_path) of the full report JSON — give it to Render Report and "
         "Extract IOCs as `report_path`.",
     )
-    sample_ids: list[int] = Field(default_factory=list, description="Samples in the report.")
+    sample_ids: list[int] = Field(default_factory=list, title="Sample IDs", description="Samples in the report.")
     errors: dict[str, str] = Field(
         default_factory=dict,
         description="Samples that could not be fetched at all, keyed by sample_id — or by 'submission:<id>' when "

@@ -34,7 +34,7 @@ def test_empty_optional_inputs_still_mean_not_set():
 def test_render_report_inputs_have_readable_titles_and_a_512_kb_default():
     props = RenderReportArguments.model_json_schema()["properties"]
 
-    assert [p["title"] for p in props.values()] == ["Report path", "Report (inline)", "Max comment size (KB)"]
+    assert [p["title"] for p in props.values()] == ["Report Path", "Report (inline)", "Max comment size (KB)"]
     assert props["max_comment_kb"]["default"] == 512
 
 

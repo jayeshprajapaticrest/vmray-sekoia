@@ -15,7 +15,7 @@ class ReportInput(BaseModel):
 
     report_path: str | SkipJsonSchema[None] = Field(
         default=None,
-        title="Report path",
+        title="Report Path",
         description="The report file written by Build Report — its `report_path` result.",
     )
     report: dict[str, Any] | SkipJsonSchema[None] = Field(
@@ -32,7 +32,7 @@ class RenderReportArguments(ReportInput):
         ge=16,
         title="Max comment size (KB)",
         description="Maximum size of each screenshot comment. Screenshots are split across as many comments as "
-        "needed to stay under it — Sekoia rejects larger action inputs (SYM216).",
+        "needed to stay under it — Sekoia rejects larger action inputs.",
     )
 
 
@@ -52,7 +52,7 @@ class RenderReportResults(BaseModel):
 class ExtractIocsArguments(ReportInput):
     ioc_severity_filter: list[str] = Field(
         default_factory=list,
-        title="IOC severity filter",
+        title="IOC Severity Filter",
         description="Restrict which IOC severities are extracted. Allowed values: 'malicious', 'suspicious'. "
         "Empty (the default) extracts every IOC, whatever its severity, and every child sample's own SHA256, "
         "whatever its verdict. With values set, a child sample's own SHA256 is extracted when its verdict is one "
@@ -60,7 +60,7 @@ class ExtractIocsArguments(ReportInput):
     )
     include_child_iocs: bool = Field(
         default=True,
-        title="Include child IOCs",
+        title="Include Child IOCs",
         description="If set to true, IOCs discovered in child samples, and each child sample's own SHA256, are "
         "extracted (in addition to root-sample IOCs). Set to false to only extract IOCs from the root sample.",
     )

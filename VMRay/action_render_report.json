@@ -8,7 +8,7 @@
     "properties": {
       "report_path": {
         "description": "The report file written by Build Report \u2014 its `report_path` result.",
-        "title": "Report path",
+        "title": "Report Path",
         "type": "string"
       },
       "report": {
