@@ -4,18 +4,18 @@
       "base_url": {
         "description": "VMRay Platform URL, e.g. https://eu.cloud.vmray.com or an on-prem appliance URL",
         "format": "uri",
-        "title": "Base Url",
+        "title": "Base URL",
         "type": "string"
       },
       "api_key": {
         "description": "VMRay API key",
-        "title": "Api Key",
+        "title": "API Key",
         "type": "string"
       },
       "verify_ssl": {
         "default": true,
         "description": "Verify the TLS certificate of the VMRay Platform. Disable only for an on-prem appliance with a self-signed certificate.",
-        "title": "Verify Ssl",
+        "title": "Verify SSL",
         "type": "boolean"
       }
     },
@@ -29,7 +29,7 @@
       "api_key"
     ]
   },
-  "description": "VMRay Platform \u2014 agentless hypervisor-based sandbox for malware detonation, VTI scoring and IOC extraction",
+  "description": "VMRay Platform \u2014 Agentless hypervisor-based sandbox for malware detonation, VTI scoring and IOC extraction",
   "name": "VMRay",
   "slug": "vmray",
   "categories": [

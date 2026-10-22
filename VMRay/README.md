@@ -1,6 +1,6 @@
 # VMRay
 
-VMRay Platform — agentless hypervisor-based sandbox for malware detonation, VTI scoring and IOC extraction.
+VMRay Platform - Agentless hypervisor-based sandbox for malware detonation, VTI scoring and IOC extraction.
 
 This module lets a Sekoia.io playbook look up file hashes in VMRay or detonate URLs, build the full VMRay report, post it on the alert as a comment (with screenshots), and push the indicators it found to a Sekoia IOC collection.
 
@@ -16,13 +16,13 @@ hashes ──► GetSamplesByHash ──► sample_ids ─────┐
 URL ─────► SubmitUrlSample ───► submission_ids ─┘   (file on data_path)          └─► ExtractIocs ──────► IOC collection
 ```
 
-1. **Find or create samples.** `GetSamplesByHash` looks hashes up in VMRay's existing analyses (no quota). `SubmitUrlSample` detonates a URL and waits for the result (consumes quota).
+1. **Find or create samples.** `GetSamplesByHash` looks hashes up in VMRay's existing analyses. `SubmitUrlSample` detonates a URL and waits for the result (consumes quota).
 2. **Build the report.** `BuildReport` fetches everything VMRay knows about each sample and writes the report to a JSON file on the playbook's data path. Only the file's path travels between nodes: a report with screenshots is far larger than Sekoia accepts as an action argument (SYM216).
 3. **Use the report.** `RenderReport` turns it into the alert comment; `ExtractIocs` turns it into indicators for an IOC collection. Neither calls VMRay or Sekoia.
 
 ## Actions
 
-### `GetSamplesByHash` — Get Samples By Hash
+### `GetSamplesByHash` - Get Samples By Hash
 
 Looks up SHA256, SHA1 or MD5 hashes in VMRay's existing analyses and returns every matching sample. Costs no quota.
 
@@ -32,7 +32,7 @@ Looks up SHA256, SHA1 or MD5 hashes in VMRay's existing analyses and returns eve
 
 **Outputs:** `found` (at least one sample) / `not_found` (none). **Results:** `sample_ids`, `samples`, `not_found` (hashes VMRay has never analysed), `errors` (per hash: invalid value or lookup failure).
 
-### `SubmitUrlSample` — Submit URL Sample
+### `SubmitUrlSample` - Submit URL Sample
 
 Submits a URL and polls every resulting submission until it finishes.
 
@@ -51,27 +51,27 @@ There are no archive settings (archive password, compound sample): they only app
 
 **Outputs:** `completed` / `timed_out` / `submission_failed`. **Results:** `submission_ids`, `sample_ids`, `submissions`, `pending_submission_ids` (still running at the timeout), `errors` (VMRay's reasons for a rejected submission).
 
-### `BuildReport` — Build Report
+### `BuildReport` - Build Report
 
-The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_ids` (from `SubmitUrlSample`, each resolved to its sample); `sample_ids` wins when both are given. Per sample it fetches, one call after another: the analyses of the latest submission, VTIs, MITRE ATT&CK techniques, IOCs, classifications and threat names — then the screenshots of each analysis. Child samples, down to `max_recursion_depth`, get only their sample object and their IOCs: the comment shows each child as one row of the child tree, and `ExtractIocs` reads their IOCs; their other sections are used nowhere, so they are not fetched.
+The heavy lifting. Takes `sample_ids` (from `GetSamplesByHash`) or `submission_ids` (from `SubmitUrlSample`, each resolved to its sample); `sample_ids` wins when both are given. Per sample it fetches, one call after another: the analyses of the latest submission, VTIs, MITRE ATT&CK techniques, IOCs, classifications and threat names - then the screenshots of each analysis. Child samples, down to `max_recursion_depth`, get only their sample object and their IOCs: the comment shows each child as one row of the child tree, and `ExtractIocs` reads their IOCs; their other sections are used nowhere, so they are not fetched.
 
 | Argument | Default | Notes |
 |---|---|---|
 | `sample_ids` / `submission_ids` | one required | |
 | `max_recursion_depth` | `10` | maximum depth of child samples analyzed in the report, at most 10; `0` disables recursion |
-| `include_screenshots` | `true` | include the screenshots of the submitted URL or looked-up hash — the top-level samples only, never their child samples |
+| `include_screenshots` | `true` | include the screenshots of the submitted URL or looked-up hash - the top-level samples only, never their child samples |
 | `ioc_severity_filter` | empty | list of `malicious` / `suspicious`: exactly one filters server-side; empty or both fetch both severities |
 | `analysis_verdict_filter` | empty | list of `malicious` / `suspicious` / `clean` to include; empty includes all analyses, even those with an unknown verdict (adding all three does not) |
 
 `include_screenshots` covers the top-level samples only: child samples' screenshots would multiply the comments for little value. In both filters, a value outside the allowed ones is ignored when a valid one is also given; a filter with no valid value (e.g. the typo `malicous`) fails the action, as in `ExtractIocs`.
 
-Screenshots are read from each analysis archive (`logs/summary.json`), scaled to at most 800 px wide and re-encoded as JPEG, then embedded as base64 — Sekoia has no attachment API, so this is the only way they reach the alert. Every screenshot is kept; one that cannot be fetched or read (and a screenshot list that cannot be read) is named in the sample's "Partial data" note. An analysis without a screenshot list, such as a static analysis, simply has none.
+Screenshots are read from each analysis archive (`logs/summary.json`), scaled to at most 800 px wide and re-encoded as JPEG, then embedded as base64 - Sekoia has no attachment API, so this is the only way they reach the alert. Every screenshot is kept; one that cannot be fetched or read (and a screenshot list that cannot be read) is named in the sample's "Partial data" note. An analysis without a screenshot list, such as a static analysis, simply has none.
 
 A failing section lands in that sample's `errors` and every other section is still filled; a sample or submission that cannot be fetched at all lands in the report's `errors`.
 
 **Results:** `report_path` (give it to `RenderReport` and `ExtractIocs`), `sample_ids`, `errors`.
 
-### `RenderReport` — Render Report
+### `RenderReport` - Render Report
 
 Turns a report into the alert comment, laid out like VMRay's own report.
 
@@ -110,9 +110,9 @@ Extracts a report's IOCs as indicators for Sekoia's "Add IOC to IOC Collection" 
 |---|---|---|
 | `report_path` (or `report`) | required | Build Report's `report_path` |
 | `ioc_severity_filter` | empty | IOC severities to extract: `malicious`, `suspicious`. Each IOC is judged on its own severity; a child sample's own SHA256 on its verdict. Empty (the default) = every IOC and every child sample's SHA256, whatever the severity or verdict; a value outside the allowed ones is ignored next to a valid one, and a filter with no valid value fails the action |
-| `include_child_iocs` | `true` | also extract the child samples' IOCs and each child sample's own SHA256; `false` = root sample only |
+| `include_child_iocs` | `true` | also extract the child samples' IOCs; `false` = root sample only |
 
-**Results:** `indicators` (`[{value, type}]`, deduplicated) and `indicator_groups` — the same values grouped by type, one entry per non-empty type (`[{type, indicators}]`). "Add IOC to IOC Collection" takes one `indicator_type` per call, so a Foreach over `indicator_groups` pushes every type with one node.
+**Results:** `indicators` (`[{value, type}]`, deduplicated) and `indicator_groups` - the same values grouped by type, one entry per non-empty type (`[{type, indicators}]`). "Add IOC to IOC Collection" takes one `indicator_type` per call, so a Foreach over `indicator_groups` pushes every type with one node.
 
 | VMRay IOC | Pushed as |
 |---|---|
@@ -121,7 +121,7 @@ Extracts a report's IOCs as indicators for Sekoia's "Add IOC to IOC Collection" 
 | URLs | `url` |
 | emails, email addresses | `email` |
 | files | `hash` — the strongest of `sha256_hash`, `sha1_hash`, `md5_hash` per file |
-| processes, mutexes, registry keys, filenames | not pushed — Sekoia's IOC collection has no matching type. They still appear in the comment |
+| processes, mutexes, registry keys, filenames | not pushed - Sekoia's IOC collection has no matching type. They still appear in the comment |
 
 ## Playbook templates
 
@@ -129,8 +129,8 @@ Two playbook templates use these actions; they are published in the [SEKOIA-IO/C
 
 | Template | Trigger |
 |---|---|
-| VMRay: Report on demand (Hash + URL) | Manual — an analyst runs it on an alert |
-| VMRay: Report on alert creation (Hash + URL) | Alert Created — runs on every new alert |
+| VMRay: Report on demand (Hash + URL) | Manual - an analyst runs it on an alert |
+| VMRay: Report on alert creation (Hash + URL) | Alert Created - runs on every new alert |
 
 Both:
 
@@ -141,9 +141,9 @@ Both:
    - **URL branch:** `SubmitUrlSample` → the same chain. When the detonation times out or is rejected, a comment says so and lists any submissions still running.
 4. When the event has neither a hash nor a URL, a comment says which fields were checked.
 
-Each Foreach (screenshot comments, IOC types) sits behind a condition that skips it when its list is empty — Sekoia rejects a Foreach over an empty list ("Foreach input is not a list").
+Each Foreach (screenshot comments, IOC types) sits behind a condition that skips it when its list is empty - Sekoia rejects a Foreach over an empty list ("Foreach input is not a list").
 
-**After creating a playbook from a template:** select your VMRay account on the VMRay nodes, and set `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes. For the alert-creation template, consider limiting the trigger to specific rules — every URL detonation consumes quota.
+**After creating a playbook from a template:** select your VMRay account on the VMRay nodes, and set `ioc_collection_id` on both "Add IOCs to IOC Collection" nodes. For the alert-creation template, consider limiting the trigger to specific rules - every URL detonation consumes quota.
 
 `tests/test_playbook_template.py` runs the "Report on demand" template end to end against a fake VMRay (copy in `tests/data/`), walking it as Sekoia's playbook engine does.
 
@@ -156,12 +156,6 @@ Each Foreach (screenshot comments, IOC types) sits behind a condition that skips
 **No nested loops inside a loop.** A Foreach inside another Foreach cannot iterate a list produced inside the outer loop — its input arrives empty. So a playbook looping over an alert's events cannot post screenshots or push IOCs per event.
 
 **URL and hash only — no file submission.** Sekoia alerts don't carry sample bytes, so there is no file-submission action. A hash is looked up; a URL is detonated.
-
-**No indicator-revocation action.** If a `reanalyze` flips a sample's verdict away from `malicious` after its IOCs were already pushed to a Sekoia IOC collection, this module has no way to retract them — `DELETE /v2/inthreat/ioc-collections/{uuid}/indicators/{id}` is a **Sekoia** endpoint, and this module only holds VMRay credentials. That action belongs in the `Sekoia.io` module.
-
-**No STIX bundle output.** Scoped in, then dropped: VMRay's own `iocs/stix` endpoint only emits STIX 2.0, and Sekoia Intelligence's accepted bundle version was never confirmed against a real submission.
-
-**Verdict is data, not a decision.** `sample_verdict` comes back in every report, but nothing in this module writes it to Sekoia's `verdict_uuid`/`custom_status` fields — that's `Sekoia.io`'s `PatchAlert` action, driven by a playbook Condition node. Deliberate: auto-closing an alert on a `clean` verdict can bury a true positive the sandbox simply didn't trigger.
 
 ## Development
 

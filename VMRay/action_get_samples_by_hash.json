@@ -32,7 +32,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Sample Ids",
+        "title": "Sample IDs",
         "type": "array"
       },
       "samples": {

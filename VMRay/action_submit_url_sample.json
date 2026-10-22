@@ -108,7 +108,7 @@
         "description": "One submission object, as GET /submission/{id} returns it once finished.",
         "properties": {
           "submission_id": {
-            "title": "Submission Id",
+            "title": "Submission ID",
             "type": "integer"
           },
           "submission_sample_id": {
@@ -121,7 +121,7 @@
               }
             ],
             "default": null,
-            "title": "Submission Sample Id"
+            "title": "Submission Sample ID"
           },
           "submission_finished": {
             "anyOf": [
@@ -181,7 +181,7 @@
               }
             ],
             "default": null,
-            "title": "Submission Original Url"
+            "title": "Submission Original URL"
           },
           "submission_consumed_quota": {
             "anyOf": [
@@ -205,7 +205,7 @@
               }
             ],
             "default": null,
-            "title": "Submission Webif Url"
+            "title": "Submission Webif URL"
           }
         },
         "required": [
@@ -229,7 +229,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Submission Ids",
+        "title": "Submission IDs",
         "type": "array"
       },
       "sample_ids": {
@@ -237,7 +237,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Sample Ids",
+        "title": "Sample IDs",
         "type": "array"
       },
       "pending_submission_ids": {
@@ -245,7 +245,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Pending Submission Ids",
+        "title": "Pending Submission IDs",
         "type": "array"
       },
       "timed_out": {
@@ -258,7 +258,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Failed Submission Ids",
+        "title": "Failed Submission IDs",
         "type": "array"
       },
       "errors": {

@@ -11,7 +11,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Sample Ids",
+        "title": "Sample IDs",
         "type": "array"
       },
       "submission_ids": {
@@ -19,7 +19,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Submission Ids",
+        "title": "Submission IDs",
         "type": "array"
       },
       "max_recursion_depth": {
@@ -69,7 +69,7 @@
         "items": {
           "type": "integer"
         },
-        "title": "Sample Ids",
+        "title": "Sample IDs",
         "type": "array"
       },
       "errors": {

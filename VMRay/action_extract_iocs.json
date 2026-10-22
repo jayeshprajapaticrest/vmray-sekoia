@@ -8,7 +8,7 @@
     "properties": {
       "report_path": {
         "description": "The report file written by Build Report \u2014 its `report_path` result.",
-        "title": "Report path",
+        "title": "Report Path",
         "type": "string"
       },
       "report": {
@@ -22,13 +22,13 @@
         "items": {
           "type": "string"
         },
-        "title": "IOC severity filter",
+        "title": "IOC Severity Filter",
         "type": "array"
       },
       "include_child_iocs": {
         "default": true,
         "description": "If set to true, IOCs discovered in child samples, and each child sample's own SHA256, are extracted (in addition to root-sample IOCs). Set to false to only extract IOCs from the root sample.",
-        "title": "Include child IOCs",
+        "title": "Include Child IOCs",
         "type": "boolean"
       }
     },

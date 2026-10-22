@@ -21,9 +21,9 @@ Look up file hashes in VMRay or detonate URLs from a Sekoia.io playbook, post th
 7. Fill in the `Add new account` form:
 
     - `Give a name to this account`: a label of your choice (e.g. `VMRay`).
-    - `Base Url`: the URL of your VMRay Platform, e.g. `https://eu.cloud.vmray.com`.
+    - `Base UrL`: the URL of your VMRay Platform, e.g. `https://eu.cloud.vmray.com`.
     - `Api Key`: the API key created in VMRay.
-    - `Verify Ssl`: keep it enabled. Disable it only for an on-premises appliance with a self-signed certificate.
+    - `Verify SSL`: keep it enabled. Disable it only for an on-premises appliance with a self-signed certificate.
 
     Click `Add account`.
 
